@@ -1,0 +1,8 @@
+{
+  "name": "LinguaCard - İngilizce Kelime Öğren",
+  "description": "Yapay zeka destekli, Supabase entegrasyonlu, görselden kelime yükleyebilen ve farklı modlarla İngilizce öğreten modern web uygulaması.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
