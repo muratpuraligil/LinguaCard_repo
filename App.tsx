@@ -10,19 +10,32 @@ import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import NoWordsModal from './components/NoWordsModal';
 import DeleteModal from './components/DeleteModal';
+import SentenceModeSelectionModal from './components/SentenceModeSelectionModal';
+import CustomSetManager from './components/CustomSetManager';
 import Auth from './components/Auth';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
+  
+  // İki ayrı veri kaynağı:
+  // 1. words: Ana kelime listesi (Kelime Listem)
+  // 2. customSetWords: Özel Cümle Setleri (Ayrı Tablo)
   const [words, setWords] = useState<Word[]>([]);
+  const [customSetWords, setCustomSetWords] = useState<Word[]>([]);
+
   const [mode, setMode] = useState<AppMode>(AppMode.HOME);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showNoWordsModal, setShowNoWordsModal] = useState(false);
+  const [showSentenceSelectModal, setShowSentenceSelectModal] = useState(false);
+  
   const [ocrLoading, setOcrLoading] = useState(false);
   const [studySet, setStudySet] = useState<Word[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   
+  // Set yönetimi için state
+  const [activeSetName, setActiveSetName] = useState<string | null>(null); // Yükleme sırasında set ismini tutar
+
   // Silme işlemleri için state'ler
   const [wordToDelete, setWordToDelete] = useState<string | null>(null);
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
@@ -38,6 +51,7 @@ export default function App() {
       setSession(session);
       if (session) {
           loadWords();
+          loadCustomSets(); // Özel setleri de yükle
       }
       setLoadingSession(false);
     });
@@ -48,8 +62,10 @@ export default function App() {
       setSession(session);
       if (session) {
           loadWords();
+          loadCustomSets();
       } else {
-          setWords([]); // Çıkış yapınca kelimeleri temizle
+          setWords([]);
+          setCustomSetWords([]);
       }
     });
 
@@ -58,16 +74,27 @@ export default function App() {
 
   const loadWords = async () => {
     const data = await wordService.getAllWords();
-    // En yeniden en eskiye sıralamayı garanti et
     const sortedData = data.sort((a, b) => 
         new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     );
     setWords(sortedData);
   };
 
-  const prepareStudySet = (type: 'LATEST' | 'RANDOM' = 'RANDOM') => {
-      let source = [...words];
+  const loadCustomSets = async () => {
+      const data = await wordService.getCustomSetWords();
+      setCustomSetWords(data);
+  };
+
+  const prepareStudySet = (type: 'LATEST' | 'RANDOM' = 'RANDOM', sourceWords?: Word[]) => {
+      let source = sourceWords ? [...sourceWords] : [...words];
       let setSize = 20;
+      
+      // Eğer özel bir kaynak (set) verilmişse hepsini al, kesme
+      if (sourceWords) {
+          setStudySet(source);
+          return;
+      }
+
       if (words.length > 200) setSize = 10;
       else if (words.length > 100) setSize = 15;
 
@@ -78,30 +105,51 @@ export default function App() {
   };
 
   const handleModeSelect = (selectedMode: AppMode) => {
-      // Önce hiç kelime yok mu kontrol et
-      if (words.length === 0) {
-          setShowNoWordsModal(true);
+      if (selectedMode === AppMode.SENTENCES) {
+          setShowSentenceSelectModal(true);
           return;
       }
 
       // Quiz modu için özel sayı kontrolü
-      if (words.length < 4 && selectedMode === AppMode.QUIZ) {
-          alert("Test modu için en az 4 farklı kelime eklemelisin!");
-          return;
+      if (selectedMode === AppMode.QUIZ) {
+          if (words.length < 4) {
+              alert("Test modu için en az 4 farklı kelime eklemelisin!");
+              return;
+          }
       }
       
+      // Flashcards veya Quiz için kelime yoksa uyar (Sentences modu hariç, çünkü o menüden seçiliyor)
+      if (selectedMode !== AppMode.CUSTOM_SETS && words.length === 0) {
+          setShowNoWordsModal(true);
+          return;
+      }
+
       prepareStudySet('RANDOM');
       setMode(selectedMode);
   };
 
+  // Cümle Modu Seçimleri
+  const handleSentenceModeStandard = () => {
+      if (words.length === 0) {
+          alert("Henüz kelime listen boş.");
+          return;
+      }
+      setShowSentenceSelectModal(false);
+      prepareStudySet('RANDOM');
+      setMode(AppMode.SENTENCES);
+  };
+
+  const handleSentenceModeCustom = () => {
+      setShowSentenceSelectModal(false);
+      setMode(AppMode.CUSTOM_SETS);
+  };
+
   const handleQuickAddRedirect = () => {
       setShowNoWordsModal(false);
-      // WordList bileşenine kaydır
       setTimeout(() => {
           const section = document.getElementById('word-list-section');
           if (section) {
               section.scrollIntoView({ behavior: 'smooth' });
-              // Butona tıklatarak formu aç (State lift yapmadan pratik çözüm)
               const btn = document.getElementById('quick-add-btn');
               if (btn) btn.click();
           }
@@ -178,7 +226,13 @@ export default function App() {
           await supabase.auth.signOut();
           setSession(null);
           setWords([]);
+          setCustomSetWords([]);
       }
+  };
+
+  const handleUploadNewSet = (setName: string) => {
+      setActiveSetName(setName);
+      setShowUploadModal(true);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -192,12 +246,23 @@ export default function App() {
       try {
         const extracted = await extractWordsFromImage(base64, mimeType);
         if (extracted && extracted.length > 0) {
-          await wordService.bulkAddWords(extracted, session?.user?.id);
-          await loadWords();
-          alert(`${extracted.length} yeni kelime görselden başarıyla çıkarıldı!`);
+          
+          if (activeSetName) {
+             // 1. DURUM: Özel Set Yüklemesi (Yeni Tabloya)
+             await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
+             await loadCustomSets(); // Custom set listesini yenile
+             alert(`${extracted.length} adet cümle '${activeSetName}' setine eklendi! (Kelime listesine eklenmedi)`);
+          } else {
+             // 2. DURUM: Normal Kelime Yüklemesi (Ana Tabloya)
+             await wordService.bulkAddWords(extracted, session?.user?.id);
+             await loadWords(); // Ana listeyi yenile
+             alert(`${extracted.length} adet kelime listenize eklendi!`);
+          }
+          
           setShowUploadModal(false);
+          setActiveSetName(null);
         } else {
-          alert("Görselde okunabilir kelime bulunamadı.");
+          alert("Görselde okunabilir veri bulunamadı.");
         }
       } catch (error: any) {
         alert(error.message || "Görsel işlenirken bir hata oluştu.");
@@ -226,7 +291,6 @@ export default function App() {
           alert("Excel yükleme hatası: " + error.message);
       } finally {
           setImportLoading(false);
-          // Input değerini temizle ki aynı dosyayı tekrar seçebilelim
           e.target.value = '';
       }
   };
@@ -244,7 +308,33 @@ export default function App() {
 
   if (mode === AppMode.FLASHCARDS) return <FlashcardMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
   if (mode === AppMode.QUIZ) return <QuizMode words={studySet} allWords={words} onExit={() => setMode(AppMode.HOME)} />;
-  if (mode === AppMode.SENTENCES) return <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
+  
+  if (mode === AppMode.SENTENCES) {
+      return <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
+  }
+  
+  if (mode === AppMode.CUSTOM_SETS) {
+      return (
+        <>
+            <CustomSetManager 
+                words={customSetWords} // ARTIK SADECE ÖZEL SETLER GÖNDERİLİYOR
+                onExit={() => setMode(AppMode.HOME)} 
+                onUploadNewSet={handleUploadNewSet}
+                onPlaySet={(setWords) => {
+                    prepareStudySet('RANDOM', setWords);
+                    setMode(AppMode.SENTENCES);
+                }}
+            />
+             {showUploadModal && (
+                <UploadModal 
+                    onClose={() => setShowUploadModal(false)}
+                    onImageUpload={handleImageUpload}
+                    isLoading={ocrLoading}
+                />
+            )}
+        </>
+      );
+  }
 
   const modalProps = getDeleteModalProps();
 
@@ -260,16 +350,17 @@ export default function App() {
 
         <Dashboard 
             userEmail={session.user.email}
-            words={words}
+            words={words} // SADECE ANA KELİME LİSTESİ
             onModeSelect={handleModeSelect}
             onAddWord={handleAddWord}
             onDeleteWord={handleRequestDelete}
             onDeleteByDate={handleRequestDeleteByDate}
             onLogout={handleLogout}
-            onOpenUpload={() => setShowUploadModal(true)}
+            onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }} // Normal yükleme
             onQuickAdd={handleQuickAddRedirect}
             onExcelUpload={handleExcelUpload}
         />
+        
         {showUploadModal && (
             <UploadModal 
                 onClose={() => setShowUploadModal(false)}
@@ -277,10 +368,19 @@ export default function App() {
                 isLoading={ocrLoading}
             />
         )}
+
+        {showSentenceSelectModal && (
+            <SentenceModeSelectionModal 
+                onClose={() => setShowSentenceSelectModal(false)}
+                onSelectStandard={handleSentenceModeStandard}
+                onSelectCustom={handleSentenceModeCustom}
+            />
+        )}
+
         {showNoWordsModal && (
             <NoWordsModal 
                 onClose={() => setShowNoWordsModal(false)}
-                onOpenUpload={() => setShowUploadModal(true)}
+                onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
                 onQuickAdd={handleQuickAddRedirect}
             />
         )}

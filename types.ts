@@ -6,13 +6,15 @@ export interface Word {
   turkish_sentence: string;
   created_at?: string;
   user_id?: string;
+  set_name?: string; // İsteğe bağlı set ismi
 }
 
 export enum AppMode {
   HOME = 'HOME',
   FLASHCARDS = 'FLASHCARDS',
   QUIZ = 'QUIZ',
-  SENTENCES = 'SENTENCES'
+  SENTENCES = 'SENTENCES',
+  CUSTOM_SETS = 'CUSTOM_SETS' // Yeni mod: Özel Set Yönetimi
 }
 
 export enum LanguageDirection {
