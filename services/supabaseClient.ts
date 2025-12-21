@@ -10,11 +10,9 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
 
-// Supabase şemasının geçerli olup olmadığını takip eden bayrak
-let isRemoteSchemaValid = true;
-
 const LOCAL_STORAGE_KEY = 'lingua_words_local';
 
+// --- YEREL DEPOLAMA YARDIMCILARI ---
 const getLocalWords = (): Word[] => {
   try {
     const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -58,34 +56,51 @@ const bulkAddLocalWordsImpl = (wordsToAdd: Omit<Word, 'id' | 'created_at'>[]) =>
   }
 };
 
+// --- DB MAPPER FONKSİYONLARI ---
+// Veritabanındaki sütunları (word_en) Frontend yapısına (english) çevirir
+const mapDbToApp = (dbRecord: any): Word => ({
+  id: dbRecord.id,
+  english: dbRecord.word_en,
+  turkish: dbRecord.word_tr,
+  example_sentence: dbRecord.example_sentence_en || '',
+  turkish_sentence: dbRecord.example_sentence_tr || '', // Tahmini sütun adı
+  created_at: dbRecord.created_at,
+  user_id: dbRecord.user_id
+});
+
+// Frontend yapısını (english) Veritabanı sütunlarına (word_en) çevirir
+const mapAppToDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string) => ({
+  word_en: word.english,
+  word_tr: word.turkish,
+  example_sentence_en: word.example_sentence,
+  example_sentence_tr: word.turkish_sentence,
+  user_id: userId
+});
+
 export const wordService = {
   async getAllWords(): Promise<Word[]> {
     let remoteWords: Word[] = [];
     
-    if (isSupabaseConfigured && supabase && isRemoteSchemaValid) {
+    if (isSupabaseConfigured && supabase) {
       try {
+        // DB sütunlarını çekerken frontend'in beklediği isimlere alias (takma ad) veriyoruz
+        // Yöntem 1: Raw SQL mapping yerine JS tarafında map ediyoruz daha güvenli
         const { data, error } = await supabase
           .from('words')
           .select('*')
           .order('created_at', { ascending: false });
         
         if (error) {
-          // Eğer sütun hatası (42703) veya tablo hatası (42P01) varsa uzaktan erişimi devre dışı bırak
-          if (error.code === '42703' || error.code === '42P01') {
-            console.error("Supabase şema hatası tespit edildi. Yerel modda devam ediliyor.", error.message);
-            isRemoteSchemaValid = false;
-          }
-          throw error;
-        }
-
-        if (data) {
-          remoteWords = data as Word[];
+          console.warn("Supabase veri çekme hatası:", error.message);
+        } else if (data) {
+           remoteWords = data.map(mapDbToApp);
         }
       } catch (e) {
-        console.warn('Supabase erişim sorunu veya şema uyumsuzluğu. Yerel veriler kullanılıyor.');
+        console.warn('Supabase erişim sorunu. Yerel veriler kullanılıyor.');
       }
     }
     
+    // Yerel ve Uzak verileri birleştir (Çakışmaları önleyerek)
     const local = getLocalWords();
     const combined = [...remoteWords];
     const remoteSet = new Set(remoteWords.map(w => w.english.toLowerCase()));
@@ -102,29 +117,24 @@ export const wordService = {
   },
 
   async addWord(word: Omit<Word, 'id' | 'created_at'>, userId?: string): Promise<Word | null> {
-    // Önce yerel olarak kaydet (her zaman güvenli liman)
+    // 1. Önce yerel kayıt (Yedek)
     const localResult = addLocalWordImpl(word);
     
-    if (isSupabaseConfigured && supabase && isRemoteSchemaValid) {
+    // 2. Supabase Kayıt
+    if (isSupabaseConfigured && supabase) {
       try {
-        const payload: any = { 
-          english: word.english, 
-          turkish: word.turkish, 
-          example_sentence: word.example_sentence, 
-          turkish_sentence: word.turkish_sentence 
-        };
-        if (userId) payload.user_id = userId;
+        const payload = mapAppToDb(word, userId);
 
         const { data, error } = await supabase.from('words').insert([payload]).select().single();
         
         if (error) {
-          if (error.code === '42703') isRemoteSchemaValid = false;
+          console.warn("Supabase insert hatası:", error.message);
           throw error;
         }
         
-        if (data) return data as Word;
+        if (data) return mapDbToApp(data);
       } catch (e) {
-        console.error("Supabase ekleme başarısız, yerel kayıt kullanıldı.");
+        console.warn("Supabase ekleme başarısız, sadece yerel kayıt yapıldı.");
       }
     } 
     return localResult;
@@ -133,37 +143,34 @@ export const wordService = {
   async bulkAddWords(wordsToAdd: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<void> {
     if (wordsToAdd.length === 0) return;
 
-    // Her zaman yerel depolamaya ekle
+    // 1. Yerel Ekleme
     bulkAddLocalWordsImpl(wordsToAdd);
 
-    if (isSupabaseConfigured && supabase && isRemoteSchemaValid) {
+    // 2. Supabase Ekleme
+    if (isSupabaseConfigured && supabase) {
       try {
-        // Mevcut kelimeleri kontrol et (sadece 'english' sütununu seçiyoruz)
+        // Mükerrer kayıt kontrolü için mevcut kelimeleri (word_en) çek
         const { data: existingData, error: fetchError } = await supabase
           .from('words')
-          .select('english');
+          .select('word_en');
         
-        if (fetchError) {
-          if (fetchError.code === '42703') isRemoteSchemaValid = false;
-          throw fetchError;
-        }
+        if (fetchError) throw fetchError;
 
-        const existingEnglish = new Set(existingData?.map((w: any) => w.english.toLowerCase()) || []);
-        let filtered: any[] = wordsToAdd.filter(w => !existingEnglish.has(w.english.toLowerCase()));
+        const existingEnglish = new Set(existingData?.map((w: any) => w.word_en.toLowerCase()) || []);
         
-        if (userId) {
-          filtered = filtered.map(w => ({ ...w, user_id: userId }));
-        }
+        // Sadece yeni olanları filtrele ve DB formatına çevir
+        let filtered = wordsToAdd
+          .filter(w => !existingEnglish.has(w.english.toLowerCase()))
+          .map(w => mapAppToDb(w, userId));
 
         if (filtered.length > 0) {
           const { error: insertError } = await supabase.from('words').insert(filtered);
           if (insertError) {
-            if (insertError.code === '42703') isRemoteSchemaValid = false;
-            throw insertError;
+             console.warn("Toplu ekleme sırasında hata:", insertError.message);
           }
         }
       } catch (error: any) {
-          console.error("Toplu ekleme sırasında veritabanı hatası. Veriler sadece yerel olarak saklandı.", error.message);
+          console.error("Toplu ekleme işlemi tamamlanamadı (DB hatası).", error.message);
       }
     }
   },
@@ -175,8 +182,8 @@ export const wordService = {
         setLocalWords(current.filter(w => w.id !== id));
     }
 
-    // Uzaktan silmeyi dene
-    if (isSupabaseConfigured && supabase && isRemoteSchemaValid) {
+    // Uzaktan sil
+    if (isSupabaseConfigured && supabase) {
       try {
         await supabase.from('words').delete().eq('id', id);
       } catch (e) {}

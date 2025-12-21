@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AppMode, Word } from './types';
 import { supabase, wordService } from './services/supabaseClient';
 import { extractWordsFromImage } from './services/geminiService';
+import { parseExcelFile } from './services/excelParser';
 import FlashcardMode from './components/FlashcardMode';
 import QuizMode from './components/QuizMode';
 import SentenceMode from './components/SentenceMode';
@@ -9,6 +10,7 @@ import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import NoWordsModal from './components/NoWordsModal';
 import DeleteModal from './components/DeleteModal';
+import Auth from './components/Auth';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -19,15 +21,39 @@ export default function App() {
   const [showNoWordsModal, setShowNoWordsModal] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [studySet, setStudySet] = useState<Word[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
   
   // Silme işlemleri için state'ler
   const [wordToDelete, setWordToDelete] = useState<string | null>(null);
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    // Test Modu: Auth bypass ediliyor
-    setLoadingSession(false);
-    loadWords();
+    // Supabase oturum kontrolü
+    if (!supabase) {
+        setLoadingSession(false);
+        return;
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+          loadWords();
+      }
+      setLoadingSession(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+          loadWords();
+      } else {
+          setWords([]); // Çıkış yapınca kelimeleri temizle
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const loadWords = async () => {
@@ -82,18 +108,22 @@ export default function App() {
       }, 100);
   };
 
-  const handleAddWord = async (english: string, turkish: string, example: string) => {
+  const handleAddWord = async (english: string, turkish: string, example: string): Promise<boolean> => {
     try {
+      const userId = session?.user?.id;
       const newWord = await wordService.addWord(
-          { english, turkish, example_sentence: example, turkish_sentence: '' }
+          { english, turkish, example_sentence: example, turkish_sentence: '' },
+          userId
       );
       if (newWord) {
         setWords(prev => [newWord, ...prev]);
+        return true;
       } else {
-        alert("Bu kelime zaten listenizde var.");
+        return false;
       }
     } catch (e) {
-      alert("Kelime eklenirken bir sorun oluştu.");
+      console.error("Kelime ekleme hatası", e);
+      return false;
     }
   };
 
@@ -108,26 +138,18 @@ export default function App() {
   };
 
   const confirmDelete = async () => {
-    // Tekil Silme
     if (wordToDelete) {
       await wordService.deleteWord(wordToDelete);
       setWords(prev => prev.filter(w => w.id !== wordToDelete));
       setWordToDelete(null);
     }
     
-    // Tarihe Göre Toplu Silme
     if (dateToDelete) {
         const formatDate = (dStr: string) => new Date(dStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'numeric', year: 'numeric' });
-        
-        // Silinecek kelimeleri bul
         const wordsToDelete = words.filter(w => formatDate(w.created_at || '') === dateToDelete);
-        
-        // Her birini sil
         for (const w of wordsToDelete) {
             await wordService.deleteWord(w.id);
         }
-
-        // State'i güncelle
         setWords(prev => prev.filter(w => formatDate(w.created_at || '') !== dateToDelete));
         setDateToDelete(null);
     }
@@ -141,7 +163,6 @@ export default function App() {
           };
       }
       if (dateToDelete) {
-          // Kaç kelime silineceğini hesapla
           const formatDate = (dStr: string) => new Date(dStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'numeric', year: 'numeric' });
           const count = words.filter(w => formatDate(w.created_at || '') === dateToDelete).length;
           return {
@@ -152,8 +173,12 @@ export default function App() {
       return { title: "", description: "" };
   };
 
-  const handleLogout = () => {
-      alert("Test Modunda Çıkış Kapalıdır.");
+  const handleLogout = async () => {
+      if (supabase) {
+          await supabase.auth.signOut();
+          setSession(null);
+          setWords([]);
+      }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,7 +192,7 @@ export default function App() {
       try {
         const extracted = await extractWordsFromImage(base64, mimeType);
         if (extracted && extracted.length > 0) {
-          await wordService.bulkAddWords(extracted);
+          await wordService.bulkAddWords(extracted, session?.user?.id);
           await loadWords();
           alert(`${extracted.length} yeni kelime görselden başarıyla çıkarıldı!`);
           setShowUploadModal(false);
@@ -183,12 +208,39 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      setImportLoading(true);
+      try {
+          const extractedWords = await parseExcelFile(file);
+          if (extractedWords && extractedWords.length > 0) {
+              await wordService.bulkAddWords(extractedWords, session?.user?.id);
+              await loadWords();
+              alert(`${extractedWords.length} adet kelime listenize eklendi!`);
+          } else {
+              alert("Dosyada uygun formatta kelime bulunamadı. Lütfen sütunların (İngilizce, Türkçe) dolu olduğundan emin olun.");
+          }
+      } catch (error: any) {
+          alert("Excel yükleme hatası: " + error.message);
+      } finally {
+          setImportLoading(false);
+          // Input değerini temizle ki aynı dosyayı tekrar seçebilelim
+          e.target.value = '';
+      }
+  };
+
   if (loadingSession) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-black">
         <div className="w-12 h-12 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
         <p className="text-blue-500 font-bold tracking-widest text-sm uppercase">LinguaCard Başlatılıyor</p>
     </div>
   );
+
+  if (!session) {
+      return <Auth />;
+  }
 
   if (mode === AppMode.FLASHCARDS) return <FlashcardMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
   if (mode === AppMode.QUIZ) return <QuizMode words={studySet} allWords={words} onExit={() => setMode(AppMode.HOME)} />;
@@ -198,8 +250,16 @@ export default function App() {
 
   return (
     <div className="bg-black min-h-screen text-white">
+        {importLoading && (
+             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex flex-col items-center justify-center">
+                 <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mb-6"></div>
+                 <h2 className="text-2xl font-black text-white">Excel İşleniyor</h2>
+                 <p className="text-slate-400 mt-2">Kelimeler veritabanına aktarılıyor...</p>
+             </div>
+        )}
+
         <Dashboard 
-            userEmail="Test Kullanıcısı"
+            userEmail={session.user.email}
             words={words}
             onModeSelect={handleModeSelect}
             onAddWord={handleAddWord}
@@ -207,6 +267,8 @@ export default function App() {
             onDeleteByDate={handleRequestDeleteByDate}
             onLogout={handleLogout}
             onOpenUpload={() => setShowUploadModal(true)}
+            onQuickAdd={handleQuickAddRedirect}
+            onExcelUpload={handleExcelUpload}
         />
         {showUploadModal && (
             <UploadModal 

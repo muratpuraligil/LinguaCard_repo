@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Sparkles } from 'lucide-react';
+import { BookOpen, ArrowRight, Lock, Mail, Sparkles } from 'lucide-react';
 
 export default function Auth() {
   const [loading, setLoading] = useState(false);
@@ -8,6 +8,14 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Sayfa yüklendiğinde kayıtlı e-postayı getir
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('lingua_saved_email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+    }
+  }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,14 +29,18 @@ export default function Auth() {
     }
 
     try {
+      // Başarılı denemede e-postayı hafızaya al
+      localStorage.setItem('lingua_saved_email', email);
+
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({
           email,
           password,
         });
         if (error) throw error;
-        setMessage('Kayıt başarılı! Giriş yapabilirsiniz.');
-        setIsSignUp(false);
+        setMessage('Kayıt başarılı! Giriş yapılıyor...');
+        // Otomatik giriş yapması beklenir, ancak bazı configlerde email onayı gerekebilir.
+        // Biz yine de akışı bozmayalım.
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -44,48 +56,54 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F0F9FF] p-4 font-['Inter']">
-      <div className="bg-white p-8 rounded-[32px] shadow-xl w-full max-w-sm border border-slate-100">
-        <div className="flex justify-center mb-6">
-          <div className="bg-yellow-100 p-4 rounded-full">
-             <Sparkles className="text-yellow-600 w-8 h-8" />
-          </div>
-        </div>
-        <h1 className="text-2xl font-bold text-center text-slate-800 mb-2">
-          {isSignUp ? 'Hesap Oluştur' : 'Hoşgeldin!'}
-        </h1>
-        <p className="text-center text-slate-500 mb-8 text-sm">
-          Kelime öğrenme yolculuğuna {isSignUp ? 'başla' : 'devam et'}.
-        </p>
+    <div className="min-h-screen flex items-center justify-center bg-black p-4 font-['Plus_Jakarta_Sans'] relative overflow-hidden">
+      {/* Background Decor */}
+      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-600/10 blur-[120px] rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+      <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-indigo-600/10 blur-[120px] rounded-full translate-x-1/3 translate-y-1/3"></div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          <div>
+      <div className="bg-[#0a0a0a] w-full max-w-md rounded-[48px] p-10 border border-white/10 shadow-2xl relative z-10">
+        
+        {/* Logo Section */}
+        <div className="flex flex-col items-center mb-10">
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-3xl flex items-center justify-center shadow-lg shadow-blue-600/20 mb-6 animate-float">
+              <BookOpen size={40} strokeWidth={2.5} className="text-white fill-white/10" />
+            </div>
+            <h1 className="text-4xl font-black text-white tracking-tighter mb-2">
+                Lingua<span className="text-blue-500">Card</span>
+            </h1>
+            <p className="text-slate-500 font-bold tracking-widest text-xs uppercase">
+                {isSignUp ? 'Yeni Hesap Oluştur' : 'Tekrar Hoşgeldin'}
+            </p>
+        </div>
+
+        <form onSubmit={handleAuth} className="space-y-5">
+          <div className="relative group">
+            <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={20} />
             <input
               type="email"
               placeholder="E-posta adresi"
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all text-slate-800"
+              className="w-full pl-16 pr-6 py-5 bg-zinc-900 border border-white/5 rounded-2xl focus:outline-none focus:border-blue-500/50 transition-all text-white font-bold placeholder:text-slate-600"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen geçerli bir e-posta adresi girin.')}
-              onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
             />
           </div>
-          <div>
+          
+          <div className="relative group">
+            <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={20} />
             <input
               type="password"
               placeholder="Şifre"
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all text-slate-800"
+              className="w-full pl-16 pr-6 py-5 bg-zinc-900 border border-white/5 rounded-2xl focus:outline-none focus:border-blue-500/50 transition-all text-white font-bold placeholder:text-slate-600"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen şifrenizi girin.')}
-              onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
+              minLength={6}
             />
           </div>
 
           {message && (
-            <div className={`text-sm text-center p-2 rounded-lg ${message.includes('başarılı') ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+            <div className={`text-sm font-bold text-center p-4 rounded-2xl border ${message.includes('başarılı') ? 'bg-green-500/10 border-green-500/20 text-green-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
               {message}
             </div>
           )}
@@ -93,16 +111,26 @@ export default function Auth() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-blue-500 text-white rounded-2xl font-bold hover:bg-blue-600 transition-all shadow-lg shadow-blue-200 disabled:opacity-70"
+            className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-lg transition-all shadow-xl shadow-blue-900/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
           >
-            {loading ? 'İşleniyor...' : (isSignUp ? 'Kayıt Ol' : 'Giriş Yap')}
+            {loading ? (
+                <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>İşleniyor...</span>
+                </>
+            ) : (
+                <>
+                    {isSignUp ? 'Kayıt Ol' : 'Giriş Yap'}
+                    <ArrowRight size={20} />
+                </>
+            )}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-8 text-center">
           <button
             onClick={() => { setIsSignUp(!isSignUp); setMessage(''); }}
-            className="text-sm text-slate-400 hover:text-blue-500 font-medium transition-colors"
+            className="text-sm text-slate-500 hover:text-white font-bold transition-colors"
           >
             {isSignUp ? 'Zaten hesabın var mı? Giriş Yap' : 'Hesabın yok mu? Kayıt Ol'}
           </button>

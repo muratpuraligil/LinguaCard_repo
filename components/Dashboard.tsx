@@ -1,17 +1,19 @@
 import React from 'react';
 import { Word, AppMode } from '../types';
 import WordList from './WordList';
-import { BookOpen, Puzzle, Sparkles, Plus, LogOut, Download, Book } from 'lucide-react';
+import { BookOpen, Puzzle, Sparkles, Plus, LogOut, Download, Image } from 'lucide-react';
 
 interface DashboardProps {
   userEmail?: string;
   words: Word[];
   onModeSelect: (mode: AppMode) => void;
-  onAddWord: (english: string, turkish: string, example: string) => void;
+  onAddWord: (english: string, turkish: string, example: string) => Promise<boolean>;
   onDeleteWord: (id: string) => void;
   onDeleteByDate: (date: string) => void;
   onLogout: () => void;
   onOpenUpload: () => void;
+  onQuickAdd: () => void;
+  onExcelUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -22,7 +24,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   onDeleteWord,
   onDeleteByDate,
   onLogout,
-  onOpenUpload
+  onOpenUpload,
+  onQuickAdd,
+  onExcelUpload
 }) => {
   const userName = userEmail ? userEmail.split('@')[0] : 'Öğrenci';
 
@@ -57,7 +61,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex items-center gap-5 group select-none cursor-default">
             {/* Animated Logo Icon */}
             <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20 animate-float transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110">
-              <Book size={32} strokeWidth={2.5} className="text-white fill-white/10" />
+              <BookOpen size={32} strokeWidth={2.5} className="text-white fill-white/10" />
             </div>
             
             {/* Modernized Logo Text */}
@@ -89,12 +93,22 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="relative z-10">
                   <h2 className="text-4xl font-black mb-3 tracking-tight text-white">Hadi Pratik Yapalım!</h2>
                   <p className="text-blue-100 font-medium text-lg">Kütüphanende tam <span className="text-yellow-400 font-black text-2xl">{words.length}</span> kelime birikti.</p>
-                  <button 
-                    onClick={onOpenUpload} 
-                    className="mt-8 bg-white text-blue-900 hover:bg-blue-50 px-8 py-4 rounded-2xl font-black flex items-center gap-3 transition-all active:scale-95 shadow-xl"
-                  >
-                      <Plus size={22}/> Yeni Kelime Yükle
-                  </button>
+                  
+                  <div className="flex flex-col sm:flex-row gap-4 mt-8">
+                      <button 
+                        onClick={onOpenUpload} 
+                        className="bg-white text-blue-900 hover:bg-blue-50 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl hover:shadow-white/20"
+                      >
+                          <Image size={22}/> Resim ile Yükle
+                      </button>
+                      
+                      <button 
+                        onClick={onQuickAdd} 
+                        className="bg-blue-600/30 text-blue-100 hover:bg-blue-600 hover:text-white border border-blue-400/30 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-3 transition-all active:scale-95 backdrop-blur-sm"
+                      >
+                          <Plus size={22}/> Hızlı Ekle
+                      </button>
+                  </div>
               </div>
               <Sparkles className="absolute right-12 bottom-12 text-yellow-400/30 w-40 h-40 -rotate-12 animate-pulse" />
           </div>
