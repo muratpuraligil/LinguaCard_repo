@@ -14,7 +14,8 @@ export enum AppMode {
   FLASHCARDS = 'FLASHCARDS',
   QUIZ = 'QUIZ',
   SENTENCES = 'SENTENCES',
-  CUSTOM_SETS = 'CUSTOM_SETS' // Yeni mod: Özel Set Yönetimi
+  CUSTOM_SETS = 'CUSTOM_SETS', // Set Yönetimi
+  CUSTOM_SET_STUDY = 'CUSTOM_SET_STUDY' // Yeni mod: Özel Set Liste Çalışması
 }
 
 export enum LanguageDirection {

@@ -6,6 +6,7 @@ import { parseExcelFile } from './services/excelParser';
 import FlashcardMode from './components/FlashcardMode';
 import QuizMode from './components/QuizMode';
 import SentenceMode from './components/SentenceMode';
+import CustomSetStudyMode from './components/CustomSetStudyMode'; // Yeni import
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import NoWordsModal from './components/NoWordsModal';
@@ -313,16 +314,22 @@ export default function App() {
       return <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
   }
   
+  // YENİ EKLENEN CUSTOM SET STUDY MODE
+  if (mode === AppMode.CUSTOM_SET_STUDY) {
+      return <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />;
+  }
+  
   if (mode === AppMode.CUSTOM_SETS) {
       return (
         <>
             <CustomSetManager 
-                words={customSetWords} // ARTIK SADECE ÖZEL SETLER GÖNDERİLİYOR
+                words={customSetWords} 
                 onExit={() => setMode(AppMode.HOME)} 
                 onUploadNewSet={handleUploadNewSet}
                 onPlaySet={(setWords) => {
-                    prepareStudySet('RANDOM', setWords);
-                    setMode(AppMode.SENTENCES);
+                    // ARTIK BURASI YENİ MODU AÇIYOR
+                    prepareStudySet('RANDOM', setWords); // setWords aslında tüm set, random parametresi burada etkisiz çünkü sourceWords veriyoruz.
+                    setMode(AppMode.CUSTOM_SET_STUDY);
                 }}
             />
              {showUploadModal && (
