@@ -140,39 +140,43 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
         {filteredWords.map((word) => {
             const dateStr = formatDate(word.created_at);
             return (
-              <div key={word.id} className="bg-zinc-900 p-8 rounded-[40px] border-b-4 border-slate-700 hover:border-slate-500 transition-all group relative overflow-hidden flex flex-col h-full">
-                <div className="flex justify-between items-start mb-4">
-                    <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition-colors">{word.english}</h3>
-                    <button onClick={() => speak(word.english)} className="text-slate-600 hover:text-blue-400 p-2 rounded-xl bg-white/5 transition-all">
+              <div key={word.id} className="bg-zinc-900 p-8 rounded-[40px] border-b-4 border-slate-700 hover:border-slate-500 transition-all group relative overflow-hidden flex flex-col h-full items-start text-left">
+                {/* Header: English + Speaker */}
+                <div className="flex justify-between items-start w-full mb-3">
+                    <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition-colors leading-tight">{word.english}</h3>
+                    <button onClick={() => speak(word.english)} className="text-slate-600 hover:text-blue-400 p-2 rounded-xl bg-white/5 transition-all flex-shrink-0 ml-2">
                         <Volume2 size={20} />
                     </button>
                 </div>
                 
+                {/* Turkish Meaning */}
                 <p className="text-slate-500 font-bold text-lg mb-6">{word.turkish}</p>
                 
-                {word.example_sentence && (
-                    <div className="bg-black/30 p-5 rounded-2xl border border-white/5 mb-8 flex-1">
-                        <p className="text-sm text-slate-400 font-medium italic leading-relaxed">"{word.example_sentence}"</p>
+                {/* Example Sentence Box - Grey Background & Spaced */}
+                {word.example_sentence ? (
+                    <div className="w-full bg-zinc-800/80 p-6 rounded-3xl border border-white/5 mb-6 flex-1">
+                        <p className="text-sm text-slate-300 font-medium italic leading-relaxed">"{word.example_sentence}"</p>
                     </div>
+                ) : (
+                    <div className="flex-1 mb-6 w-full"></div>
                 )}
-                
-                {!word.example_sentence && <div className="flex-1 mb-8"></div>}
 
-                {/* Left Action: Date Badge (Orange) */}
-                <button 
-                    onClick={(e) => { e.stopPropagation(); onDeleteByDate(dateStr); }}
-                    className="absolute bottom-6 left-6 flex items-center gap-2 px-3 py-3 rounded-xl bg-orange-500/10 text-orange-500 border border-orange-500/20 hover:bg-orange-500 hover:text-white transition-all group/date"
-                    title={`${dateStr} tarihindeki tüm kelimeleri sil`}
-                >
-                    <Calendar size={14} />
-                    <span className="text-[10px] font-black tracking-widest">{dateStr}</span>
-                </button>
+                {/* Footer Actions - Flex Row (No absolute positioning) */}
+                <div className="w-full flex justify-between items-center mt-auto pt-2">
+                    {/* Left Action: Date Badge (Orange) */}
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onDeleteByDate(dateStr); }}
+                        className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-orange-500/10 text-orange-500 border border-orange-500/20 hover:bg-orange-500 hover:text-white transition-all group/date"
+                        title={`${dateStr} tarihindeki tüm kelimeleri sil`}
+                    >
+                        <Calendar size={16} />
+                        <span className="text-[11px] font-black tracking-widest">{dateStr}</span>
+                    </button>
 
-                {/* Right Action: Single Delete Button */}
-                <div className="absolute bottom-6 right-6">
+                    {/* Right Action: Single Delete Button */}
                     <button 
                       onClick={(e) => { e.stopPropagation(); onDelete(word.id); }}
-                      className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
+                      className="p-3 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
                       title="Sadece bu kelimeyi sil"
                     >
                       <Trash2 size={20} />
