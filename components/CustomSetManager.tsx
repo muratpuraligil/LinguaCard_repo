@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Word } from '../types';
-import { ArrowLeft, Plus, Play, Layers, Image, CheckCircle2, CircleDashed, RotateCcw, Trophy } from 'lucide-react';
+import { ArrowLeft, Plus, Play, Layers, Image, CheckCircle2, CircleDashed, RotateCcw, Trophy, Loader2 } from 'lucide-react';
 
 interface CustomSetManagerProps {
   words: Word[];
@@ -161,7 +161,8 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
                     label: "Başlanmadı",
                     btnText: "Çalışmaya Başla",
                     btnIcon: <Play size={24} fill="currentColor" />,
-                    progressColor: "bg-slate-700"
+                    progressColor: "bg-slate-700",
+                    animationClass: ""
                 };
 
                 if (status === 'IN_PROGRESS') {
@@ -170,11 +171,12 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
                         bgColor: "bg-blue-900/20",
                         borderColor: "border-blue-500/30",
                         bottomBorder: "border-blue-500",
-                        icon: <Layers size={20} strokeWidth={2.5} />,
+                        icon: <Loader2 size={20} strokeWidth={2.5} className="animate-spin" />, // İkon dönüyor
                         label: "Devam Ediyor",
                         btnText: "Devam Et",
                         btnIcon: <Play size={24} fill="currentColor" />,
-                        progressColor: "bg-blue-500"
+                        progressColor: "bg-blue-500",
+                        animationClass: "animate-pulse" // Badge yanıp sönüyor
                     };
                 } else if (status === 'COMPLETED') {
                     statusConfig = {
@@ -186,7 +188,8 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
                         label: "Tamamlandı",
                         btnText: "Tekrar Et",
                         btnIcon: <RotateCcw size={24} />,
-                        progressColor: "bg-emerald-500"
+                        progressColor: "bg-emerald-500",
+                        animationClass: ""
                     };
                 }
 
@@ -195,7 +198,7 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
                         
                         {/* Top Bar: Status Badge (BÜYÜTÜLDÜ) */}
                         <div className="flex justify-between items-center mb-6 h-10 flex-shrink-0">
-                            <div className={`flex items-center gap-3 px-5 py-2.5 rounded-full text-sm font-black uppercase tracking-widest ${statusConfig.bgColor} ${statusConfig.color} border ${statusConfig.borderColor}`}>
+                            <div className={`flex items-center gap-3 px-5 py-2.5 rounded-full text-sm font-black uppercase tracking-widest ${statusConfig.bgColor} ${statusConfig.color} border ${statusConfig.borderColor} ${statusConfig.animationClass}`}>
                                 {statusConfig.icon}
                                 <span>{statusConfig.label}</span>
                             </div>

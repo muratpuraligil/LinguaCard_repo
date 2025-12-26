@@ -6,7 +6,7 @@ import { parseExcelFile } from './services/excelParser';
 import FlashcardMode from './components/FlashcardMode';
 import QuizMode from './components/QuizMode';
 import SentenceMode from './components/SentenceMode';
-import CustomSetStudyMode from './components/CustomSetStudyMode'; // Yeni import
+import CustomSetStudyMode from './components/CustomSetStudyMode';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import NoWordsModal from './components/NoWordsModal';
@@ -19,9 +19,6 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
-  // İki ayrı veri kaynağı:
-  // 1. words: Ana kelime listesi (Kelime Listem)
-  // 2. customSetWords: Özel Cümle Setleri (Ayrı Tablo)
   const [words, setWords] = useState<Word[]>([]);
   const [customSetWords, setCustomSetWords] = useState<Word[]>([]);
 
@@ -34,15 +31,12 @@ export default function App() {
   const [studySet, setStudySet] = useState<Word[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   
-  // Set yönetimi için state
-  const [activeSetName, setActiveSetName] = useState<string | null>(null); // Yükleme sırasında set ismini tutar
+  const [activeSetName, setActiveSetName] = useState<string | null>(null);
 
-  // Silme işlemleri için state'ler
   const [wordToDelete, setWordToDelete] = useState<string | null>(null);
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    // Supabase oturum kontrolü
     if (!supabase) {
         setLoadingSession(false);
         return;
@@ -52,7 +46,7 @@ export default function App() {
       setSession(session);
       if (session) {
           loadWords();
-          loadCustomSets(); // Özel setleri de yükle
+          loadCustomSets();
       }
       setLoadingSession(false);
     });
@@ -90,7 +84,6 @@ export default function App() {
       let source = sourceWords ? [...sourceWords] : [...words];
       let setSize = 20;
       
-      // Eğer özel bir kaynak (set) verilmişse hepsini al, kesme
       if (sourceWords) {
           setStudySet(source);
           return;
@@ -111,7 +104,6 @@ export default function App() {
           return;
       }
 
-      // Quiz modu için özel sayı kontrolü
       if (selectedMode === AppMode.QUIZ) {
           if (words.length < 4) {
               alert("Test modu için en az 4 farklı kelime eklemelisin!");
@@ -119,7 +111,6 @@ export default function App() {
           }
       }
       
-      // Flashcards veya Quiz için kelime yoksa uyar (Sentences modu hariç, çünkü o menüden seçiliyor)
       if (selectedMode !== AppMode.CUSTOM_SETS && words.length === 0) {
           setShowNoWordsModal(true);
           return;
@@ -129,7 +120,6 @@ export default function App() {
       setMode(selectedMode);
   };
 
-  // Cümle Modu Seçimleri
   const handleSentenceModeStandard = () => {
       if (words.length === 0) {
           alert("Henüz kelime listen boş.");
@@ -236,28 +226,28 @@ export default function App() {
       setShowUploadModal(true);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleImageFileProcess = (file: File) => {
     if (!file) return;
     const mimeType = file.type;
     setOcrLoading(true);
     const reader = new FileReader();
+    
     reader.onload = async (evt) => {
       const base64 = evt.target?.result as string;
       try {
         const extracted = await extractWordsFromImage(base64, mimeType);
+        
         if (extracted && extracted.length > 0) {
-          
           if (activeSetName) {
-             // 1. DURUM: Özel Set Yüklemesi (Yeni Tabloya)
+             // 1. DURUM: Özel Set Yüklemesi
              await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
-             await loadCustomSets(); // Custom set listesini yenile
-             alert(`${extracted.length} adet cümle '${activeSetName}' setine eklendi! (Kelime listesine eklenmedi)`);
+             await loadCustomSets();
+             alert(`"${activeSetName}" seti başarıyla güncellendi!`);
           } else {
-             // 2. DURUM: Normal Kelime Yüklemesi (Ana Tabloya)
+             // 2. DURUM: Ana Kelime Yüklemesi
              await wordService.bulkAddWords(extracted, session?.user?.id);
-             await loadWords(); // Ana listeyi yenile
-             alert(`${extracted.length} adet kelime listenize eklendi!`);
+             await loadWords();
+             alert("Kelimeler analiz edildi ve listenize eklendi!");
           }
           
           setShowUploadModal(false);
@@ -266,6 +256,7 @@ export default function App() {
           alert("Görselde okunabilir veri bulunamadı.");
         }
       } catch (error: any) {
+        console.error(error);
         alert(error.message || "Görsel işlenirken bir hata oluştu.");
       } finally {
         setOcrLoading(false);
@@ -284,9 +275,9 @@ export default function App() {
           if (extractedWords && extractedWords.length > 0) {
               await wordService.bulkAddWords(extractedWords, session?.user?.id);
               await loadWords();
-              alert(`${extractedWords.length} adet kelime listenize eklendi!`);
+              alert("Excel dosyası başarıyla işlendi ve kelimeler eklendi.");
           } else {
-              alert("Dosyada uygun formatta kelime bulunamadı. Lütfen sütunların (İngilizce, Türkçe) dolu olduğundan emin olun.");
+              alert("Dosyada uygun formatta kelime bulunamadı.");
           }
       } catch (error: any) {
           alert("Excel yükleme hatası: " + error.message);
@@ -314,7 +305,6 @@ export default function App() {
       return <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
   }
   
-  // YENİ EKLENEN CUSTOM SET STUDY MODE
   if (mode === AppMode.CUSTOM_SET_STUDY) {
       return <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />;
   }
@@ -327,15 +317,14 @@ export default function App() {
                 onExit={() => setMode(AppMode.HOME)} 
                 onUploadNewSet={handleUploadNewSet}
                 onPlaySet={(setWords) => {
-                    // ARTIK BURASI YENİ MODU AÇIYOR
-                    prepareStudySet('RANDOM', setWords); // setWords aslında tüm set, random parametresi burada etkisiz çünkü sourceWords veriyoruz.
+                    prepareStudySet('RANDOM', setWords);
                     setMode(AppMode.CUSTOM_SET_STUDY);
                 }}
             />
              {showUploadModal && (
                 <UploadModal 
                     onClose={() => setShowUploadModal(false)}
-                    onImageUpload={handleImageUpload}
+                    onFileSelect={handleImageFileProcess}
                     isLoading={ocrLoading}
                 />
             )}
@@ -357,13 +346,13 @@ export default function App() {
 
         <Dashboard 
             userEmail={session.user.email}
-            words={words} // SADECE ANA KELİME LİSTESİ
+            words={words}
             onModeSelect={handleModeSelect}
             onAddWord={handleAddWord}
             onDeleteWord={handleRequestDelete}
             onDeleteByDate={handleRequestDeleteByDate}
             onLogout={handleLogout}
-            onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }} // Normal yükleme
+            onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
             onQuickAdd={handleQuickAddRedirect}
             onExcelUpload={handleExcelUpload}
         />
@@ -371,7 +360,7 @@ export default function App() {
         {showUploadModal && (
             <UploadModal 
                 onClose={() => setShowUploadModal(false)}
-                onImageUpload={handleImageUpload}
+                onFileSelect={handleImageFileProcess}
                 isLoading={ocrLoading}
             />
         )}

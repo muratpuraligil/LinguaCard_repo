@@ -70,7 +70,7 @@ const QuizMode: React.FC<QuizModeProps> = ({ words, allWords, onExit }) => {
   if (finished) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 text-center font-['Plus_Jakarta_Sans']">
-        <div className="bg-[#0a0a0a] border border-emerald-500/20 p-12 rounded-[56px] shadow-2xl w-full max-w-md relative overflow-hidden">
+        <div className="bg-zinc-900 border border-emerald-500/20 p-12 rounded-[56px] shadow-2xl w-full max-w-md relative overflow-hidden">
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl"></div>
             <CheckCircle className="text-emerald-500 w-24 h-24 mx-auto mb-8 animate-bounce" />
             <h2 className="text-4xl font-black text-white mb-4">Harika İş!</h2>
@@ -109,9 +109,11 @@ const QuizMode: React.FC<QuizModeProps> = ({ words, allWords, onExit }) => {
       </div>
 
       <div className="flex-1 px-8 flex flex-col justify-center max-w-lg mx-auto w-full relative z-10">
-        <div className="bg-[#0a0a0a] rounded-[56px] p-12 border border-white/5 shadow-2xl mb-12 text-center relative overflow-hidden group">
+        <div className="bg-zinc-900 rounded-[56px] p-12 border border-white/5 shadow-2xl mb-12 text-center relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500/30 group-hover:h-3 transition-all"></div>
-            <p className="text-slate-600 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Anlamı Nedir?</p>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">
+                {direction === LanguageDirection.TR_EN ? "İngilizce Karşılığı Nedir?" : "Türkçe Karşılığı Nedir?"}
+            </p>
             <h2 className="text-5xl font-black text-white leading-tight tracking-tighter">
                 {direction === LanguageDirection.EN_TR ? currentWord?.english : currentWord?.turkish}
             </h2>
@@ -125,9 +127,9 @@ const QuizMode: React.FC<QuizModeProps> = ({ words, allWords, onExit }) => {
                  if (showResult) {
                    if (opt === correct) btnClass += "bg-emerald-500 border-emerald-400 text-black shadow-lg shadow-emerald-500/20 scale-105";
                    else if (opt === selectedOption) btnClass += "bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/20";
-                   else btnClass += "bg-white/5 border-white/5 text-slate-700 opacity-50";
+                   else btnClass += "bg-zinc-900/50 border-white/5 text-slate-600 opacity-50";
                  } else {
-                   btnClass += "bg-[#0a0a0a] border-white/5 text-slate-400 hover:border-emerald-500/50 hover:text-white hover:bg-white/5 active:scale-95";
+                   btnClass += "bg-zinc-900 border-white/5 text-slate-400 hover:border-emerald-500/50 hover:text-white hover:bg-zinc-800 active:scale-95";
                  }
 
                 return <button key={idx} onClick={() => handleSelect(opt)} disabled={showResult} className={btnClass}>{opt}</button>
