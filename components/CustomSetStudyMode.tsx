@@ -77,7 +77,8 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
   };
 
   // Tamamlanma Kontrolü
-  const completedCount = Object.values(progress).filter(p => p?.status === 'CORRECT').length;
+  // Fix: Explicitly type 'p' as 'any' to avoid "Property 'status' does not exist on type 'unknown'" error.
+  const completedCount = Object.values(progress).filter((p: any) => p?.status === 'CORRECT').length;
   const progressPercentage = Math.round((completedCount / words.length) * 100);
 
   useEffect(() => {
