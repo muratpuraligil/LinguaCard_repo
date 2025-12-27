@@ -14,6 +14,12 @@ import DeleteModal from './components/DeleteModal';
 import SentenceModeSelectionModal from './components/SentenceModeSelectionModal';
 import CustomSetManager from './components/CustomSetManager';
 import Auth from './components/Auth';
+import { CheckCircle2, AlertCircle, X } from 'lucide-react';
+
+interface Toast {
+  message: string;
+  type: 'success' | 'error';
+}
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -36,6 +42,13 @@ export default function App() {
 
   const [wordToDelete, setWordToDelete] = useState<string | null>(null);
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<Toast | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   useEffect(() => {
     if (!supabase) {
@@ -107,7 +120,7 @@ export default function App() {
 
       if (selectedMode === AppMode.QUIZ) {
           if (words.length < 4) {
-              alert("Test modu için en az 4 farklı kelime eklemelisin!");
+              showToast("Test modu için en az 4 farklı kelime eklemelisin!", "error");
               return;
           }
       }
@@ -123,7 +136,7 @@ export default function App() {
 
   const handleSentenceModeStandard = () => {
       if (words.length === 0) {
-          alert("Henüz kelime listen boş.");
+          showToast("Henüz kelime listen boş.", "error");
           return;
       }
       setShowSentenceSelectModal(false);
@@ -157,6 +170,7 @@ export default function App() {
       );
       if (newWord) {
         setWords(prev => [newWord, ...prev]);
+        showToast("Kelime başarıyla eklendi.");
         return true;
       } else {
         return false;
@@ -182,6 +196,7 @@ export default function App() {
       await wordService.deleteWord(wordToDelete);
       setWords(prev => prev.filter(w => w.id !== wordToDelete));
       setWordToDelete(null);
+      showToast("Kelime silindi.");
     }
     
     if (dateToDelete) {
@@ -192,6 +207,7 @@ export default function App() {
         }
         setWords(prev => prev.filter(w => formatDate(w.created_at || '') !== dateToDelete));
         setDateToDelete(null);
+        showToast("Seçili tarihteki kelimeler silindi.");
     }
   };
 
@@ -219,6 +235,7 @@ export default function App() {
           setSession(null);
           setWords([]);
           setCustomSetWords([]);
+          showToast("Başarıyla çıkış yapıldı.");
       }
   };
 
@@ -238,7 +255,7 @@ export default function App() {
     
     reader.onerror = () => {
         setOcrLoading(false);
-        alert("Dosya okunamadı. Lütfen farklı bir görsel deneyin.");
+        showToast("Dosya okunamadı. Lütfen farklı bir görsel deneyin.", "error");
     };
 
     reader.onload = async (evt) => {
@@ -247,27 +264,36 @@ export default function App() {
         const extracted = await extractWordsFromImage(base64, mimeType);
         
         if (extracted && extracted.length > 0) {
+          let addedCount = 0;
           if (activeSetName) {
-             await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
+             addedCount = await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
              await loadCustomSets();
-             alert(`"${activeSetName}" seti başarıyla güncellendi!`);
+             if (addedCount > 0) {
+                showToast(`"${activeSetName}" setine ${addedCount} yeni cümle eklendi!`);
+             } else {
+                showToast("Eklenecek yeni bir kelime bulunamadı.");
+             }
           } else {
-             await wordService.bulkAddWords(extracted, session?.user?.id);
+             addedCount = await wordService.bulkAddWords(extracted, session?.user?.id);
              await loadWords();
-             alert("Kelimeler analiz edildi ve listenize eklendi!");
+             if (addedCount > 0) {
+                showToast(`${addedCount} yeni kelime analiz edildi ve listenize eklendi!`);
+             } else {
+                showToast("Eklenecek yeni bir kelime bulunamadı.");
+             }
           }
           
           setShowUploadModal(false);
           setActiveSetName(null);
         } else {
-          alert("Görselde okunabilir veri bulunamadı.");
+          showToast("Görselde okunabilir veri bulunamadı.", "error");
         }
       } catch (error: any) {
         console.error("İşleme hatası:", error);
         if (error.message === "MISSING_API_KEY" || error.message === "INVALID_API_KEY") {
             setApiHasKeyError(true);
         } else {
-            alert(error.message || "Görsel işlenirken bir hata oluştu.");
+            showToast(error.message || "Görsel işlenirken bir hata oluştu.", "error");
         }
       } finally {
         setOcrLoading(false);
@@ -284,14 +310,18 @@ export default function App() {
       try {
           const extractedWords = await parseExcelFile(file);
           if (extractedWords && extractedWords.length > 0) {
-              await wordService.bulkAddWords(extractedWords, session?.user?.id);
+              const addedCount = await wordService.bulkAddWords(extractedWords, session?.user?.id);
               await loadWords();
-              alert("Excel dosyası başarıyla işlendi ve kelimeler eklendi.");
+              if (addedCount > 0) {
+                  showToast(`${addedCount} yeni kelime başarıyla eklendi.`);
+              } else {
+                  showToast("Eklenecek yeni bir kelime bulunamadı.");
+              }
           } else {
-              alert("Dosyada uygun formatta kelime bulunamadı.");
+              showToast("Dosyada uygun formatta kelime bulunamadı.", "error");
           }
       } catch (error: any) {
-          alert("Excel yükleme hatası: " + error.message);
+          showToast("Excel yükleme hatası: " + error.message, "error");
       } finally {
           setImportLoading(false);
           e.target.value = '';
@@ -305,43 +335,28 @@ export default function App() {
     </div>
   );
 
-  if (!session) {
-      return <Auth />;
-  }
-
-  if (mode === AppMode.FLASHCARDS) return <FlashcardMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
-  if (mode === AppMode.QUIZ) return <QuizMode words={studySet} allWords={words} onExit={() => setMode(AppMode.HOME)} />;
-  if (mode === AppMode.SENTENCES) return <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
-  if (mode === AppMode.CUSTOM_SET_STUDY) return <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />;
-  
-  if (mode === AppMode.CUSTOM_SETS) {
-      return (
-        <>
-            <CustomSetManager 
-                words={customSetWords} 
-                onExit={() => setMode(AppMode.HOME)} 
-                onUploadNewSet={handleUploadNewSet}
-                onPlaySet={(setWords) => {
-                    prepareStudySet('RANDOM', setWords);
-                    setMode(AppMode.CUSTOM_SET_STUDY);
-                }}
-            />
-             {showUploadModal && (
-                <UploadModal 
-                    onClose={() => setShowUploadModal(false)}
-                    onFileSelect={handleImageFileProcess}
-                    isLoading={ocrLoading}
-                    isKeyInvalid={apiHasKeyError}
-                />
-            )}
-        </>
-      );
-  }
+  if (!session) return <Auth />;
 
   const modalProps = getDeleteModalProps();
 
   return (
-    <div className="bg-black min-h-screen text-white">
+    <div className="bg-black min-h-screen text-white font-['Plus_Jakarta_Sans']">
+        {toast && (
+          <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[10001] animate-fadeIn">
+            <div className={`flex items-center gap-3 px-6 py-4 rounded-3xl border shadow-2xl backdrop-blur-xl ${
+              toast.type === 'success' 
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                : 'bg-red-500/10 border-red-500/20 text-red-400'
+            }`}>
+              {toast.type === 'success' ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
+              <span className="font-black text-sm tracking-wide">{toast.message}</span>
+              <button onClick={() => setToast(null)} className="ml-4 p-1 hover:bg-white/10 rounded-lg transition-all">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {importLoading && (
              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex flex-col items-center justify-center">
                  <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mb-6"></div>
@@ -350,58 +365,64 @@ export default function App() {
              </div>
         )}
 
-        <Dashboard 
-            userEmail={session.user.email}
-            words={words}
-            onModeSelect={handleModeSelect}
-            onAddWord={handleAddWord}
-            onDeleteWord={handleRequestDelete}
-            onDeleteByDate={handleRequestDeleteByDate}
-            onLogout={handleLogout}
-            onOpenUpload={() => { 
-                setActiveSetName(null); 
-                setApiHasKeyError(false);
-                setShowUploadModal(true); 
-            }}
-            onQuickAdd={handleQuickAddRedirect}
-            onExcelUpload={handleExcelUpload}
-        />
+        {mode === AppMode.FLASHCARDS && <FlashcardMode words={studySet} onExit={() => setMode(AppMode.HOME)} />}
+        {mode === AppMode.QUIZ && <QuizMode words={studySet} allWords={words} onExit={() => setMode(AppMode.HOME)} />}
+        {mode === AppMode.SENTENCES && <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />}
+        {mode === AppMode.CUSTOM_SET_STUDY && <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />}
         
-        {showUploadModal && (
-            <UploadModal 
-                onClose={() => setShowUploadModal(false)}
-                onFileSelect={handleImageFileProcess}
-                isLoading={ocrLoading}
-                isKeyInvalid={apiHasKeyError}
-            />
+        {mode === AppMode.CUSTOM_SETS && (
+            <>
+                <CustomSetManager 
+                    words={customSetWords} 
+                    onExit={() => setMode(AppMode.HOME)} 
+                    onUploadNewSet={handleUploadNewSet}
+                    onPlaySet={(setWords) => {
+                        prepareStudySet('RANDOM', setWords);
+                        setMode(AppMode.CUSTOM_SET_STUDY);
+                    }}
+                />
+                 {showUploadModal && (
+                    <UploadModal 
+                        onClose={() => setShowUploadModal(false)}
+                        onFileSelect={handleImageFileProcess}
+                        isLoading={ocrLoading}
+                        isKeyInvalid={apiHasKeyError}
+                    />
+                )}
+            </>
         )}
 
-        {showSentenceSelectModal && (
-            <SentenceModeSelectionModal 
-                onClose={() => setShowSentenceSelectModal(false)}
-                onSelectStandard={handleSentenceModeStandard}
-                onSelectCustom={handleSentenceModeCustom}
-            />
-        )}
-
-        {showNoWordsModal && (
-            <NoWordsModal 
-                onClose={() => setShowNoWordsModal(false)}
+        {mode === AppMode.HOME && (
+          <>
+            <Dashboard 
+                userEmail={session.user.email}
+                words={words}
+                onModeSelect={handleModeSelect}
+                onAddWord={handleAddWord}
+                onDeleteWord={handleRequestDelete}
+                onDeleteByDate={handleRequestDeleteByDate}
+                onLogout={handleLogout}
                 onOpenUpload={() => { 
                     setActiveSetName(null); 
                     setApiHasKeyError(false);
                     setShowUploadModal(true); 
                 }}
                 onQuickAdd={handleQuickAddRedirect}
+                onExcelUpload={handleExcelUpload}
             />
-        )}
-        {(wordToDelete || dateToDelete) && (
-            <DeleteModal 
-                title={modalProps.title}
-                description={modalProps.description}
-                onConfirm={confirmDelete}
-                onCancel={() => { setWordToDelete(null); setDateToDelete(null); }}
-            />
+            {showUploadModal && (
+                <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} isKeyInvalid={apiHasKeyError} />
+            )}
+            {showSentenceSelectModal && (
+                <SentenceModeSelectionModal onClose={() => setShowSentenceSelectModal(false)} onSelectStandard={handleSentenceModeStandard} onSelectCustom={handleSentenceModeCustom} />
+            )}
+            {showNoWordsModal && (
+                <NoWordsModal onClose={() => setShowNoWordsModal(false)} onOpenUpload={() => { setActiveSetName(null); setApiHasKeyError(false); setShowUploadModal(true); }} onQuickAdd={handleQuickAddRedirect} />
+            )}
+            {(wordToDelete || dateToDelete) && (
+                <DeleteModal title={modalProps.title} description={modalProps.description} onConfirm={confirmDelete} onCancel={() => { setWordToDelete(null); setDateToDelete(null); }} />
+            )}
+          </>
         )}
     </div>
   );

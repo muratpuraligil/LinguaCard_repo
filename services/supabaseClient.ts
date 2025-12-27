@@ -12,7 +12,6 @@ export const supabase = isSupabaseConfigured
 
 const LOCAL_STORAGE_KEY = 'lingua_words_local';
 
-// --- YEREL DEPOLAMA YARDIMCILARI ---
 const getLocalWords = (): Word[] => {
   try {
     const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -44,7 +43,7 @@ const addLocalWordImpl = (word: Omit<Word, 'id' | 'created_at'>): Word | null =>
   return newWord;
 };
 
-const bulkAddLocalWordsImpl = (wordsToAdd: Omit<Word, 'id' | 'created_at'>[]) => {
+const bulkAddLocalWordsImpl = (wordsToAdd: Omit<Word, 'id' | 'created_at'>[]): number => {
   const current = getLocalWords();
   const existingEnglish = new Set(current.map(w => w.english.toLowerCase().trim()));
   
@@ -59,9 +58,9 @@ const bulkAddLocalWordsImpl = (wordsToAdd: Omit<Word, 'id' | 'created_at'>[]) =>
   if (filtered.length > 0) {
     setLocalWords([...filtered, ...current]);
   }
+  return filtered.length;
 };
 
-// --- DB MAPPER FONKSİYONLARI ---
 const mapDbToApp = (dbRecord: any): Word => ({
   id: dbRecord.id,
   english: dbRecord.english || dbRecord.word_en || '',
@@ -88,147 +87,97 @@ const mapAppToCustomDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string
   example_sentence: word.example_sentence.trim(),
   turkish_sentence: word.turkish_sentence.trim(),
   user_id: userId,
-  set_name: word.set_name // Zorunlu alan
+  set_name: word.set_name
 });
 
 export const wordService = {
-  // ANA KELİME LİSTESİNİ ÇEKER
   async getAllWords(): Promise<Word[]> {
     let remoteWords: Word[] = [];
-    
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('words')
           .select('*')
           .order('created_at', { ascending: false });
-        
-        if (error) {
-          console.warn("Supabase veri çekme hatası:", error.message);
-        } else if (data) {
-           remoteWords = data.map(mapDbToApp);
-        }
-      } catch (e) {
-        console.warn('Supabase erişim sorunu. Yerel veriler kullanılıyor.');
-      }
+        if (!error && data) remoteWords = data.map(mapDbToApp);
+      } catch (e) {}
     }
-    
-    // Yerel ve Uzak verileri birleştir
     const local = getLocalWords();
     const combined = [...remoteWords];
     const remoteIds = new Set(remoteWords.map(w => w.id));
-    
-    local.forEach(l => {
-      if (!remoteIds.has(l.id)) {
-        combined.push(l);
-      }
-    });
-
-    return combined.sort((a, b) => 
-      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    );
+    local.forEach(l => { if (!remoteIds.has(l.id)) combined.push(l); });
+    return combined.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
   },
 
-  // ÖZEL SET CÜMLELERİNİ ÇEKER
   async getCustomSetWords(): Promise<Word[]> {
     if (!isSupabaseConfigured || !supabase) return [];
-
     try {
-      const { data, error } = await supabase
-        .from('custom_sets')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        if (error.code === '42P01') { 
-            console.warn("Custom sets tablosu henüz oluşturulmamış.");
-        } else {
-            console.warn("Custom sets çekme hatası:", error.message);
-        }
-        return [];
-      }
+      const { data, error } = await supabase.from('custom_sets').select('*').order('created_at', { ascending: false });
+      if (error) return [];
       return data ? data.map(mapDbToApp) : [];
-    } catch (e) {
-      console.error("Custom sets servisi hatası:", e);
-      return [];
-    }
+    } catch (e) { return []; }
   },
 
-  // ANA KELİME LİSTESİNE EKLEME
   async addWord(word: Omit<Word, 'id' | 'created_at'>, userId?: string): Promise<Word | null> {
     const localResult = addLocalWordImpl(word);
-    
     if (isSupabaseConfigured && supabase) {
       try {
         const payload = mapAppToDb(word, userId);
         const { data, error } = await supabase.from('words').insert([payload]).select().single();
-        
-        if (error) throw error;
-        if (data) return mapDbToApp(data);
-      } catch (e) {
-        console.warn("Supabase ekleme başarısız, sadece yerel kayıt yapıldı.");
-      }
+        if (!error && data) return mapDbToApp(data);
+      } catch (e) {}
     } 
     return localResult;
   },
 
-  // ANA KELİME LİSTESİNE TOPLU EKLEME (SADECE EKLEME YAPAR, SAYI DÖNMEZ)
-  async bulkAddWords(wordsToAdd: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<void> {
-    if (wordsToAdd.length === 0) return;
-
-    // Önce Local Storage güncelle (Fallback)
-    bulkAddLocalWordsImpl(wordsToAdd);
+  /**
+   * Eklenen yeni kelime sayısını döndürür.
+   */
+  async bulkAddWords(wordsToAdd: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<number> {
+    if (wordsToAdd.length === 0) return 0;
+    const localAdded = bulkAddLocalWordsImpl(wordsToAdd);
 
     if (isSupabaseConfigured && supabase) {
       try {
-        // 1. Adım: Gelen Listeyi Kendi İçinde Tekilleştir
         const uniqueIncoming = new Map();
         wordsToAdd.forEach(w => {
             const key = w.english.trim().toLowerCase();
-            if(!uniqueIncoming.has(key)) {
-                uniqueIncoming.set(key, w);
-            }
+            if(!uniqueIncoming.has(key)) uniqueIncoming.set(key, w);
         });
         const distinctWordsToAdd = Array.from(uniqueIncoming.values());
 
-        // 2. Adım: Mevcut kelimeleri DB'den kontrol et (Hala veri bütünlüğü için gerekli)
-        const { data: existingData, error: fetchError } = await supabase
-          .from('words')
-          .select('word_en');
-        
+        const { data: existingData, error: fetchError } = await supabase.from('words').select('word_en');
         if (fetchError) throw fetchError;
 
         const existingEnglish = new Set(existingData?.map((w: any) => w.word_en.toLowerCase().trim()) || []);
-        
-        // 3. Adım: Filtrele
         let filtered = distinctWordsToAdd
           .filter(w => !existingEnglish.has(w.english.toLowerCase().trim()))
           .map(w => mapAppToDb(w, userId));
 
-        // 4. Adım: Sadece Ekle
         if (filtered.length > 0) {
           const { error: insertError } = await supabase.from('words').insert(filtered);
-          if (insertError) {
-             console.warn("Toplu ekleme sırasında hata:", insertError.message);
-          }
+          if (insertError) throw insertError;
+          return filtered.length;
         }
+        return 0;
       } catch (error: any) {
-          console.error("Toplu ekleme işlemi tamamlanamadı:", error.message);
+          console.error("Toplu ekleme hatası:", error.message);
+          return localAdded;
       }
     }
+    return localAdded;
   },
 
-  // ÖZEL SET TABLOSUNA TOPLU EKLEME (SADECE EKLEME YAPAR, SAYI DÖNMEZ)
-  async addCustomSetItems(items: Omit<Word, 'id' | 'created_at'>[], setName: string, userId?: string): Promise<void> {
-     if (!isSupabaseConfigured || !supabase || items.length === 0) return;
-
+  /**
+   * Eklenen yeni kelime sayısını döndürür.
+   */
+  async addCustomSetItems(items: Omit<Word, 'id' | 'created_at'>[], setName: string, userId?: string): Promise<number> {
+     if (!isSupabaseConfigured || !supabase || items.length === 0) return 0;
      try {
        const uniqueIncoming = new Map();
        items.forEach(w => {
             const key = w.english.trim().toLowerCase();
-            if(!uniqueIncoming.has(key)) {
-                uniqueIncoming.set(key, w);
-            }
+            if(!uniqueIncoming.has(key)) uniqueIncoming.set(key, w);
        });
        const distinctItems = Array.from(uniqueIncoming.values());
 
@@ -237,20 +186,19 @@ export const wordService = {
            .select('english')
            .eq('set_name', setName);
         
-       if (fetchError && fetchError.code !== '42P01') {
-           console.warn("Set kontrol hatası:", fetchError.message);
-       }
+       if (fetchError && fetchError.code !== '42P01') throw fetchError;
 
        const existingSetWords = new Set(existingSetData?.map((w: any) => w.english.toLowerCase().trim()) || []);
-
        const payload = distinctItems
         .filter(item => !existingSetWords.has(item.english.toLowerCase().trim()))
         .map(item => mapAppToCustomDb({ ...item, set_name: setName }, userId));
 
        if (payload.length > 0) {
-           await supabase.from('custom_sets').insert(payload);
+           const { error: insertError } = await supabase.from('custom_sets').insert(payload);
+           if (insertError) throw insertError;
+           return payload.length;
        }
-       
+       return 0;
      } catch (error: any) {
        console.error("Custom set ekleme hatası:", error.message);
        throw error;
@@ -259,14 +207,9 @@ export const wordService = {
 
   async deleteWord(id: string): Promise<void> {
     const current = getLocalWords();
-    if (current.some(w => w.id === id)) {
-        setLocalWords(current.filter(w => w.id !== id));
-    }
-
+    if (current.some(w => w.id === id)) setLocalWords(current.filter(w => w.id !== id));
     if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('words').delete().eq('id', id);
-      } catch (e) {}
+      try { await supabase.from('words').delete().eq('id', id); } catch (e) {}
     }
   }
 };
