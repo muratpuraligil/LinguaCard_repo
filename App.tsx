@@ -28,6 +28,7 @@ export default function App() {
   const [showSentenceSelectModal, setShowSentenceSelectModal] = useState(false);
   
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [apiHasKeyError, setApiHasKeyError] = useState(false);
   const [studySet, setStudySet] = useState<Word[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   
@@ -223,6 +224,7 @@ export default function App() {
 
   const handleUploadNewSet = (setName: string) => {
       setActiveSetName(setName);
+      setApiHasKeyError(false); // Yeni denemede hatayı sıfırla
       setShowUploadModal(true);
   };
 
@@ -230,8 +232,9 @@ export default function App() {
     if (!file) return;
     const mimeType = file.type;
     setOcrLoading(true);
-    const reader = new FileReader();
+    setApiHasKeyError(false);
     
+    const reader = new FileReader();
     reader.onload = async (evt) => {
       const base64 = evt.target?.result as string;
       try {
@@ -256,8 +259,8 @@ export default function App() {
       } catch (error: any) {
         console.error(error);
         if (error.message === "MISSING_API_KEY" || error.message === "INVALID_API_KEY") {
-            // Hata modalda zaten buton olarak gösteriliyor, burada sessiz kalabiliriz veya alert verebiliriz
-            alert("API anahtarı eksik veya geçersiz. Lütfen görsel yükleme penceresindeki butondan anahtar seçimi yapın.");
+            setApiHasKeyError(true);
+            // Alert yerine modalın kendi içindeki seçim UI'ının tetiklenmesini bekliyoruz
         } else {
             alert(error.message || "Görsel işlenirken bir hata oluştu.");
         }
@@ -323,6 +326,7 @@ export default function App() {
                     onClose={() => setShowUploadModal(false)}
                     onFileSelect={handleImageFileProcess}
                     isLoading={ocrLoading}
+                    isKeyInvalid={apiHasKeyError}
                 />
             )}
         </>
@@ -349,7 +353,11 @@ export default function App() {
             onDeleteWord={handleRequestDelete}
             onDeleteByDate={handleRequestDeleteByDate}
             onLogout={handleLogout}
-            onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
+            onOpenUpload={() => { 
+                setActiveSetName(null); 
+                setApiHasKeyError(false);
+                setShowUploadModal(true); 
+            }}
             onQuickAdd={handleQuickAddRedirect}
             onExcelUpload={handleExcelUpload}
         />
@@ -359,6 +367,7 @@ export default function App() {
                 onClose={() => setShowUploadModal(false)}
                 onFileSelect={handleImageFileProcess}
                 isLoading={ocrLoading}
+                isKeyInvalid={apiHasKeyError}
             />
         )}
 
@@ -373,7 +382,11 @@ export default function App() {
         {showNoWordsModal && (
             <NoWordsModal 
                 onClose={() => setShowNoWordsModal(false)}
-                onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
+                onOpenUpload={() => { 
+                    setActiveSetName(null); 
+                    setApiHasKeyError(false);
+                    setShowUploadModal(true); 
+                }}
                 onQuickAdd={handleQuickAddRedirect}
             />
         )}

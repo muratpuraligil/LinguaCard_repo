@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Image as ImageIcon, X, Keyboard, Key, AlertCircle, ExternalLink } from 'lucide-react';
 
@@ -6,33 +5,33 @@ interface UploadModalProps {
   onClose: () => void;
   onFileSelect: (file: File) => void;
   isLoading: boolean;
+  isKeyInvalid?: boolean;
 }
 
-// Global declaration removed to prevent collision with environment's AIStudio type definition
-
-const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoading }) => {
+const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoading, isKeyInvalid }) => {
   const [needsKey, setNeedsKey] = useState(false);
 
   useEffect(() => {
     const checkKey = async () => {
-      // Accessing aistudio via window casting to avoid TypeScript conflict with predefined global types
       const aistudio = (window as any).aistudio;
       if (aistudio) {
         const hasKey = await aistudio.hasSelectedApiKey();
         // process.env.API_KEY de boşsa ve aistudio key de yoksa butonu göster
-        if (!hasKey && !process.env.API_KEY) {
+        // Veya dışarıdan "anahtar geçersiz" bilgisi geldiyse butonu göster
+        if ((!hasKey && !process.env.API_KEY) || isKeyInvalid) {
           setNeedsKey(true);
         }
       }
     };
     checkKey();
-  }, []);
+  }, [isKeyInvalid]);
 
   const handleOpenKeyDialog = async () => {
     const aistudio = (window as any).aistudio;
     if (aistudio) {
       await aistudio.openSelectKey();
-      setNeedsKey(false); // Seçimden sonra butonu gizle (yarış durumunu engellemek için direkt false)
+      // Anahtar seçimi tetiklendikten sonra seçim başarılı varsayılır
+      setNeedsKey(false); 
     }
   };
 
@@ -75,9 +74,13 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
                 <div className="w-20 h-20 bg-amber-500/10 rounded-3xl flex items-center justify-center mx-auto mb-8">
                     <Key size={40} className="text-amber-500" />
                 </div>
-                <h2 className="text-3xl font-black text-white mb-4">API Anahtarı Gerekli</h2>
+                <h2 className="text-3xl font-black text-white mb-4">
+                    {isKeyInvalid ? 'Anahtar Hatası' : 'API Anahtarı Gerekli'}
+                </h2>
                 <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-                    Yapay zeka özelliklerini kullanabilmek için bir API anahtarı seçmelisiniz.
+                    {isKeyInvalid 
+                        ? 'Seçili API anahtarı yetkisiz veya geçersiz görünüyor. Lütfen farklı bir anahtar seçin.'
+                        : 'Yapay zeka özelliklerini kullanabilmek için bir API anahtarı seçmelisiniz.'}
                 </p>
                 
                 <div className="space-y-4">
@@ -86,7 +89,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
                         className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-black rounded-2xl font-black text-lg shadow-xl shadow-amber-900/20 transition-all active:scale-95 flex items-center justify-center gap-3"
                     >
                         <Key size={20} />
-                        API Anahtarı Seç
+                        {isKeyInvalid ? 'Anahtarı Güncelle' : 'API Anahtarı Seç'}
                     </button>
                     
                     <a 
@@ -102,7 +105,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
                 <div className="mt-8 p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-start gap-3 text-left">
                     <AlertCircle className="text-blue-400 shrink-0 mt-0.5" size={18} />
                     <p className="text-xs text-blue-200 leading-relaxed font-medium">
-                        Not: Ücretli (Paid) bir GCP projesinden anahtar seçmeniz önerilir. Seçimden sonra uygulama otomatik olarak aktifleşecektir.
+                        Not: Ücretli (Paid) bir GCP projesinden anahtar seçmeniz önerilir.
                     </p>
                 </div>
             </div>
@@ -119,7 +122,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
                 <div className="border-2 border-dashed border-white/10 rounded-[40px] p-8 bg-white/5 flex flex-col items-center justify-center gap-6 group transition-all relative overflow-hidden hover:bg-white/10 hover:border-blue-500/30">
                      <div className="w-full flex justify-center">
                          <label className="cursor-pointer flex flex-col items-center gap-4 p-8 bg-black rounded-[32px] border border-white/5 hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-500/20 transition-all w-full max-w-[220px] group-hover:scale-105">
-                             <div className="w-16 h-16 bg-blue-500/10 text-blue-500 rounded-2xl flex items-center justify-center group-hover:bg-blue-50 group-hover:text-white transition-all">
+                             <div className="w-16 h-16 bg-blue-500/10 text-blue-500 rounded-2xl flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-all">
                                 <ImageIcon size={32} />
                              </div>
                              <div className="text-center">

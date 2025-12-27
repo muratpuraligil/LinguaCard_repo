@@ -14,7 +14,7 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
   // Ortam değişkenlerinden veya globalden anahtarı almayı dene
   const apiKey = process.env.API_KEY;
 
-  if (!apiKey) {
+  if (!apiKey || apiKey.length < 5) {
     throw new Error("MISSING_API_KEY");
   }
 
@@ -80,7 +80,14 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
   } catch (error: any) {
     console.error("Gemini OCR Hatası:", error);
     
-    if (error.message?.includes("API key not valid") || error.message?.includes("403")) {
+    const errMsg = error.message || "";
+    // API anahtarı hataları: 403, 400 (Invalid Key), "API key not valid", "Requested entity was not found"
+    if (
+        errMsg.includes("API key not valid") || 
+        errMsg.includes("403") || 
+        errMsg.includes("400") || 
+        errMsg.includes("Requested entity was not found")
+    ) {
         throw new Error("INVALID_API_KEY");
     }
     
