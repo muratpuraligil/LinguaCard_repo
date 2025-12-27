@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 export interface ExtractedWord {
@@ -11,14 +12,16 @@ export interface ExtractedWord {
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
-  // Ortam değişkenlerinden veya globalden anahtarı almayı dene
+  // Google GenAI SDK kuralları gereği anahtar sadece 'process.env.API_KEY' üzerinden alınır.
+  // Netlify'da değişken isminin 'API_KEY' olduğundan ve Scope'un 'Builds' içerdiğinden emin olun.
   const apiKey = process.env.API_KEY;
 
-  if (!apiKey || apiKey.length < 5) {
+  if (!apiKey) {
+    console.error("API Anahtarı bulunamadı (process.env.API_KEY boş).");
     throw new Error("MISSING_API_KEY");
   }
 
-  // Her çağrıda yeni instance oluşturarak güncel anahtarın kullanıldığından emin ol
+  // İstek anında yeni instance oluşturarak güncel anahtarı kullan
   const ai = new GoogleGenAI({ apiKey });
   
   try {
@@ -67,6 +70,7 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       }
     });
 
+    // SDK kurallarına göre .text property'sine doğrudan erişim
     const text = response.text;
     if (!text) return [];
 
@@ -81,7 +85,6 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
     console.error("Gemini OCR Hatası:", error);
     
     const errMsg = error.message || "";
-    // API anahtarı hataları: 403, 400 (Invalid Key), "API key not valid", "Requested entity was not found"
     if (
         errMsg.includes("API key not valid") || 
         errMsg.includes("403") || 
