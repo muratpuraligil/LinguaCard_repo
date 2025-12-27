@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
 export interface ExtractedWord {
@@ -12,9 +11,15 @@ export interface ExtractedWord {
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
-  // Use a fresh instance right before the call to ensure the latest API key from the environment is used.
-  // The API key must be obtained exclusively from process.env.API_KEY as per the guidelines.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Ortam değişkenlerinden veya globalden anahtarı almayı dene
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey) {
+    throw new Error("MISSING_API_KEY");
+  }
+
+  // Her çağrıda yeni instance oluşturarak güncel anahtarın kullanıldığından emin ol
+  const ai = new GoogleGenAI({ apiKey });
   
   try {
     const response = await ai.models.generateContent({
@@ -62,30 +67,23 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       }
     });
 
-    // Directly access the .text property from the response as per extracting text output guidelines.
     const text = response.text;
-    if (!text) {
-      console.warn("Model boş yanıt döndürdü.");
-      return [];
-    }
+    if (!text) return [];
 
     try {
       const parsed = JSON.parse(text);
-      console.log("Başarıyla çıkarılan kelime sayısı:", parsed.length);
       return Array.isArray(parsed) ? parsed : [];
     } catch (parseError) {
-      console.error("JSON parse hatası (Gemini yanıtı):", text);
+      console.error("JSON parse hatası:", text);
       return [];
     }
   } catch (error: any) {
-    console.error("Gemini OCR API Hatası:", error);
+    console.error("Gemini OCR Hatası:", error);
     
-    // Simplified error handling for API key and generic errors.
-    const errString = error.message || '';
-    if (errString.includes("API_KEY_INVALID") || errString.includes("API key not valid")) {
-        throw new Error("API Anahtarı geçersiz. Lütfen ortam değişkenlerini kontrol edin.");
+    if (error.message?.includes("API key not valid") || error.message?.includes("403")) {
+        throw new Error("INVALID_API_KEY");
     }
     
-    throw new Error(`Yapay zeka görseli okuyamadı: ${error.message || 'Bilinmeyen hata'}`);
+    throw error;
   }
 };

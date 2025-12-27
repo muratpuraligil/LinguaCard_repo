@@ -239,12 +239,10 @@ export default function App() {
         
         if (extracted && extracted.length > 0) {
           if (activeSetName) {
-             // 1. DURUM: Özel Set Yüklemesi
              await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
              await loadCustomSets();
              alert(`"${activeSetName}" seti başarıyla güncellendi!`);
           } else {
-             // 2. DURUM: Ana Kelime Yüklemesi
              await wordService.bulkAddWords(extracted, session?.user?.id);
              await loadWords();
              alert("Kelimeler analiz edildi ve listenize eklendi!");
@@ -257,7 +255,12 @@ export default function App() {
         }
       } catch (error: any) {
         console.error(error);
-        alert(error.message || "Görsel işlenirken bir hata oluştu.");
+        if (error.message === "MISSING_API_KEY" || error.message === "INVALID_API_KEY") {
+            // Hata modalda zaten buton olarak gösteriliyor, burada sessiz kalabiliriz veya alert verebiliriz
+            alert("API anahtarı eksik veya geçersiz. Lütfen görsel yükleme penceresindeki butondan anahtar seçimi yapın.");
+        } else {
+            alert(error.message || "Görsel işlenirken bir hata oluştu.");
+        }
       } finally {
         setOcrLoading(false);
       }
@@ -300,14 +303,8 @@ export default function App() {
 
   if (mode === AppMode.FLASHCARDS) return <FlashcardMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
   if (mode === AppMode.QUIZ) return <QuizMode words={studySet} allWords={words} onExit={() => setMode(AppMode.HOME)} />;
-  
-  if (mode === AppMode.SENTENCES) {
-      return <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
-  }
-  
-  if (mode === AppMode.CUSTOM_SET_STUDY) {
-      return <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />;
-  }
+  if (mode === AppMode.SENTENCES) return <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />;
+  if (mode === AppMode.CUSTOM_SET_STUDY) return <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />;
   
   if (mode === AppMode.CUSTOM_SETS) {
       return (
