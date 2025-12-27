@@ -95,13 +95,14 @@ export default function App() {
       setCustomSetWords(data);
   };
 
-  // Kartın anında güncellenmesi için state'i manuel olarak manipüle ediyoruz
+  // Edit işleminin anında yansıması için state referansını zorunlu olarak değiştiriyoruz
   const handleRenameCustomSetLocally = (oldName: string, newName: string) => {
       setCustomSetWords(prev => {
           const updated = prev.map(w => 
               w.set_name === oldName ? { ...w, set_name: newName } : w
           );
-          return [...updated]; // Yeni referans oluşturarak React'ın değişimi fark etmesini sağlıyoruz
+          // React'ın değişikliği kesin algılaması için yeni bir dizi referansı döndürüyoruz
+          return [...updated];
       });
   };
 
