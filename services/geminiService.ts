@@ -11,15 +11,24 @@ export interface ExtractedWord {
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
-  // Netlify ve yerel ortamlar arasında değişken okuma uyumluluğu için:
-  // @ts-ignore
-  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
+  // Netlify/Vite ortamında değişkenlere erişim için tüm olasılıklar:
+  const apiKey = 
+    // @ts-ignore
+    (import.meta as any).env?.VITE_API_KEY || 
+    // @ts-ignore
+    (import.meta as any).env?.API_KEY || 
+    // @ts-ignore
+    (typeof process !== 'undefined' ? process.env?.VITE_API_KEY : null) ||
+    // @ts-ignore
+    (typeof process !== 'undefined' ? process.env?.API_KEY : null);
 
-  if (!apiKey || apiKey.trim() === "" || apiKey === "undefined") {
-    console.error("KRITIK HATA: API_KEY bulunamadı. Değişken ismini 'API_KEY' olarak Netlify'a ekleyin ve 'Clear cache and deploy' yapın.");
+  if (!apiKey || apiKey === "undefined" || apiKey.trim() === "") {
+    console.error("KRITIK HATA: API Anahtarı (VITE_API_KEY) bulunamadı.");
+    console.info("ÇÖZÜM: Netlify panelinde değişken ismini 'VITE_API_KEY' olarak değiştirin ve 'Clear cache and deploy' yapın.");
     throw new Error("MISSING_API_KEY");
   }
 
+  // Her istekte temiz bir instance (SDK kuralı)
   const ai = new GoogleGenAI({ apiKey });
   
   try {
@@ -67,18 +76,13 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       return [];
     }
   } catch (error: any) {
-    console.error("Gemini API Hatası Detay:", error);
+    console.error("Gemini API Hatası:", error);
     
     const errMsg = error.message || "";
-    if (
-        errMsg.includes("API key not valid") || 
-        errMsg.includes("403") || 
-        errMsg.includes("400") || 
-        errMsg.includes("Requested entity was not found")
-    ) {
+    if (errMsg.includes("API key not valid") || errMsg.includes("403") || errMsg.includes("400")) {
         throw new Error("INVALID_API_KEY");
     }
     
-    throw new Error(errMsg || "Yapay zeka servisine erişilemiyor.");
+    throw new Error("Görsel analiz edilemedi. Lütfen internet bağlantınızı veya API anahtarınızı kontrol edin.");
   }
 };
