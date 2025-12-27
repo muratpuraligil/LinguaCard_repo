@@ -12,9 +12,14 @@ export interface ExtractedWord {
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
-  // Always use process.env.API_KEY directly for initialization as per guidelines.
-  // The system ensures this variable is correctly populated.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Vite ortamında environment variable'lara erişim
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("MISSING_API_KEY");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   
   try {
     const response = await ai.models.generateContent({
@@ -50,7 +55,6 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       }
     });
 
-    // Access the .text property directly, do not call as a method.
     const text = response.text;
     if (!text) return [];
 
@@ -63,12 +67,10 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
     }
   } catch (error: any) {
     console.error("Gemini API Hatası:", error);
-    
     const errMsg = error.message || "";
     if (errMsg.includes("API key not valid") || errMsg.includes("403") || errMsg.includes("400")) {
         throw new Error("INVALID_API_KEY");
     }
-    
     throw new Error("Görsel analiz edilemedi. Lütfen internet bağlantınızı veya API anahtarınızı kontrol edin.");
   }
 };
