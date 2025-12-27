@@ -224,7 +224,7 @@ export default function App() {
 
   const handleUploadNewSet = (setName: string) => {
       setActiveSetName(setName);
-      setApiHasKeyError(false); // Yeni denemede hatayı sıfırla
+      setApiHasKeyError(false); 
       setShowUploadModal(true);
   };
 
@@ -235,6 +235,12 @@ export default function App() {
     setApiHasKeyError(false);
     
     const reader = new FileReader();
+    
+    reader.onerror = () => {
+        setOcrLoading(false);
+        alert("Dosya okunamadı. Lütfen farklı bir görsel deneyin.");
+    };
+
     reader.onload = async (evt) => {
       const base64 = evt.target?.result as string;
       try {
@@ -257,10 +263,9 @@ export default function App() {
           alert("Görselde okunabilir veri bulunamadı.");
         }
       } catch (error: any) {
-        console.error(error);
+        console.error("İşleme hatası:", error);
         if (error.message === "MISSING_API_KEY" || error.message === "INVALID_API_KEY") {
             setApiHasKeyError(true);
-            // Alert yerine modalın kendi içindeki seçim UI'ının tetiklenmesini bekliyoruz
         } else {
             alert(error.message || "Görsel işlenirken bir hata oluştu.");
         }
