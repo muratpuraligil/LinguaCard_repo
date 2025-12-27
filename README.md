@@ -1,20 +1,16 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# LinguaCard
 
-# Run and deploy your AI Studio app
+Yapay zeka destekli modern İngilizce kelime ve cümle öğrenme uygulaması.
 
-This contains everything you need to run your app locally.
+## Özellikler
+- Görselden otomatik kelime ve cümle analizi (Gemini AI)
+- Özel cümle setleri oluşturma ve çalışma
+- Supabase ile bulut senkronizasyonu
+- Flashcard, Quiz ve Cümle çeviri modları
 
-View your app in AI Studio: https://ai.studio/apps/drive/164eZ-9PghAtxnwPqgd4pNcVwxyjSBCVF
+## Kurulum
+Bu proje modern tarayıcılarda doğrudan çalışacak şekilde tasarlanmıştır.
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. Depoyu klonlayın.
+2. Gerekli ortam değişkenlerini (Supabase ve Gemini API) yapılandırın.
+3. Bir yerel sunucu (Vite veya Live Server) ile çalıştırın.

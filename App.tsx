@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AppMode, Word } from './types';
 import { supabase, wordService } from './services/supabaseClient';
@@ -92,6 +93,16 @@ export default function App() {
   const loadCustomSets = async () => {
       const data = await wordService.getCustomSetWords();
       setCustomSetWords(data);
+  };
+
+  // Kartın anında güncellenmesi için state'i manuel olarak manipüle ediyoruz
+  const handleRenameCustomSetLocally = (oldName: string, newName: string) => {
+      setCustomSetWords(prev => {
+          const updated = prev.map(w => 
+              w.set_name === oldName ? { ...w, set_name: newName } : w
+          );
+          return [...updated]; // Yeni referans oluşturarak React'ın değişimi fark etmesini sağlıyoruz
+      });
   };
 
   const prepareStudySet = (type: 'LATEST' | 'RANDOM' = 'RANDOM', sourceWords?: Word[]) => {
@@ -376,6 +387,8 @@ export default function App() {
                     words={customSetWords} 
                     onExit={() => setMode(AppMode.HOME)} 
                     onUploadNewSet={handleUploadNewSet}
+                    onRefresh={loadCustomSets}
+                    onRenameCustomSetLocally={handleRenameCustomSetLocally}
                     onPlaySet={(setWords) => {
                         prepareStudySet('RANDOM', setWords);
                         setMode(AppMode.CUSTOM_SET_STUDY);

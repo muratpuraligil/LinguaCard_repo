@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 export interface ExtractedWord {
@@ -11,25 +12,9 @@ export interface ExtractedWord {
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
-  // Netlify/Vite ortamında değişkenlere erişim için tüm olasılıklar:
-  const apiKey = 
-    // @ts-ignore
-    (import.meta as any).env?.VITE_API_KEY || 
-    // @ts-ignore
-    (import.meta as any).env?.API_KEY || 
-    // @ts-ignore
-    (typeof process !== 'undefined' ? process.env?.VITE_API_KEY : null) ||
-    // @ts-ignore
-    (typeof process !== 'undefined' ? process.env?.API_KEY : null);
-
-  if (!apiKey || apiKey === "undefined" || apiKey.trim() === "") {
-    console.error("KRITIK HATA: API Anahtarı (VITE_API_KEY) bulunamadı.");
-    console.info("ÇÖZÜM: Netlify panelinde değişken ismini 'VITE_API_KEY' olarak değiştirin ve 'Clear cache and deploy' yapın.");
-    throw new Error("MISSING_API_KEY");
-  }
-
-  // Her istekte temiz bir instance (SDK kuralı)
-  const ai = new GoogleGenAI({ apiKey });
+  // Always use process.env.API_KEY directly for initialization as per guidelines.
+  // The system ensures this variable is correctly populated.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const response = await ai.models.generateContent({
@@ -65,6 +50,7 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       }
     });
 
+    // Access the .text property directly, do not call as a method.
     const text = response.text;
     if (!text) return [];
 

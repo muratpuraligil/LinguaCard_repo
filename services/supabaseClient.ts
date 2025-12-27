@@ -130,9 +130,6 @@ export const wordService = {
     return localResult;
   },
 
-  /**
-   * Eklenen yeni kelime sayısını döndürür.
-   */
   async bulkAddWords(wordsToAdd: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<number> {
     if (wordsToAdd.length === 0) return 0;
     const localAdded = bulkAddLocalWordsImpl(wordsToAdd);
@@ -168,9 +165,6 @@ export const wordService = {
     return localAdded;
   },
 
-  /**
-   * Eklenen yeni kelime sayısını döndürür.
-   */
   async addCustomSetItems(items: Omit<Word, 'id' | 'created_at'>[], setName: string, userId?: string): Promise<number> {
      if (!isSupabaseConfigured || !supabase || items.length === 0) return 0;
      try {
@@ -211,5 +205,27 @@ export const wordService = {
     if (isSupabaseConfigured && supabase) {
       try { await supabase.from('words').delete().eq('id', id); } catch (e) {}
     }
+  },
+
+  async deleteCustomSet(setName: string): Promise<void> {
+      if (!isSupabaseConfigured || !supabase) return;
+      try {
+          const { error } = await supabase.from('custom_sets').delete().eq('set_name', setName);
+          if (error) throw error;
+      } catch (e) {
+          console.error("Set silme hatası", e);
+          throw e;
+      }
+  },
+
+  async renameCustomSet(oldName: string, newName: string): Promise<void> {
+      if (!isSupabaseConfigured || !supabase) return;
+      try {
+          const { error } = await supabase.from('custom_sets').update({ set_name: newName }).eq('set_name', oldName);
+          if (error) throw error;
+      } catch (e) {
+          console.error("Set isimlendirme hatası", e);
+          throw e;
+      }
   }
 };
