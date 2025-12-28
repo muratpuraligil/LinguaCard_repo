@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Word } from '../types';
 import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle } from 'lucide-react';
 
@@ -31,6 +31,18 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
     window.speechSynthesis.speak(u);
   };
 
+  const handleForceOpen = () => {
+      setIsAdding(true);
+      setFormError(null);
+      // Scroll mantığı: Render edildikten sonra kaydır
+      setTimeout(() => {
+          const formElement = document.getElementById('add-word-form-container');
+          if (formElement) {
+              formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+      }, 100);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -57,9 +69,9 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
   };
 
   // Tarih formatlamak için yardımcı fonksiyon
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return 'Tarih Yok';
-    return new Date(dateString).toLocaleDateString('tr-TR', {
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return 'Tarih Yok';
+    return new Date(dateStr).toLocaleDateString('tr-TR', {
       day: 'numeric',
       month: 'numeric',
       year: 'numeric'
@@ -68,6 +80,9 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
 
   return (
     <div className="w-full" id="word-list-section">
+      {/* Gizli Tetikleyici Buton (Dashboard'dan erişim için) */}
+      <button id="force-open-add-word" className="hidden" onClick={handleForceOpen}></button>
+
       {/* Search and Quick Add Bar */}
       <div className="flex flex-col md:flex-row gap-4 mb-8">
         <div className="relative flex-1 group">
@@ -81,7 +96,7 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
           />
         </div>
         <button 
-          id="quick-add-btn"
+          id="toggle-add-btn"
           onClick={() => { setIsAdding(!isAdding); setFormError(null); }}
           className={`flex items-center justify-center gap-2 px-8 py-5 rounded-3xl font-black text-lg transition-all active:scale-95 whitespace-nowrap ${isAdding ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-xl shadow-blue-900/20'}`}
         >
@@ -91,48 +106,50 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
       </div>
 
       {isAdding && (
-          <form onSubmit={handleSubmit} className="mb-10 bg-zinc-900 p-10 rounded-[40px] border border-blue-500/20 animate-fadeIn shadow-2xl relative overflow-hidden">
-              <div className="flex justify-between items-center mb-8">
-                  <h4 className="text-2xl font-black text-white">Yeni Kelime</h4>
-                  <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Manuel Giriş</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <input 
-                    required 
-                    value={newEng} 
-                    onChange={e => handleInputChange(setNewEng, e.target.value)} 
-                    placeholder="İngilizce Kelime" 
-                    className={`w-full p-5 rounded-2xl bg-black border ${formError ? 'border-red-500/50' : 'border-white/5'} focus:border-blue-500 transition-all outline-none text-white font-bold`}
-                    onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen bu alanı doldurun.')}
-                    onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
-                  />
-                  <input 
-                    required 
-                    value={newTr} 
-                    onChange={e => handleInputChange(setNewTr, e.target.value)} 
-                    placeholder="Türkçe Karşılığı" 
-                    className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold"
-                    onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen bu alanı doldurun.')}
-                    onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
-                  />
-              </div>
-              <input value={newEx} onChange={e => handleInputChange(setNewEx, e.target.value)} placeholder="Örnek Cümle (Opsiyonel)" className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold mb-8"/>
-              
-              {formError && (
-                  <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 animate-shake">
-                      <AlertCircle size={20} />
-                      <span className="font-bold text-sm">{formError}</span>
-                  </div>
-              )}
+          <div id="add-word-form-container">
+            <form onSubmit={handleSubmit} className="mb-10 bg-zinc-900 p-10 rounded-[40px] border border-blue-500/20 animate-fadeIn shadow-2xl relative overflow-hidden">
+                <div className="flex justify-between items-center mb-8">
+                    <h4 className="text-2xl font-black text-white">Yeni Kelime</h4>
+                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Manuel Giriş</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <input 
+                      required 
+                      value={newEng} 
+                      onChange={e => handleInputChange(setNewEng, e.target.value)} 
+                      placeholder="İngilizce Kelime" 
+                      className={`w-full p-5 rounded-2xl bg-black border ${formError ? 'border-red-500/50' : 'border-white/5'} focus:border-blue-500 transition-all outline-none text-white font-bold`}
+                      onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen bu alanı doldurun.')}
+                      onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
+                    />
+                    <input 
+                      required 
+                      value={newTr} 
+                      onChange={e => handleInputChange(setNewTr, e.target.value)} 
+                      placeholder="Türkçe Karşılığı" 
+                      className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold"
+                      onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen bu alanı doldurun.')}
+                      onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
+                    />
+                </div>
+                <input value={newEx} onChange={e => handleInputChange(setNewEx, e.target.value)} placeholder="Örnek Cümle (Opsiyonel)" className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold mb-8"/>
+                
+                {formError && (
+                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 animate-shake">
+                        <AlertCircle size={20} />
+                        <span className="font-bold text-sm">{formError}</span>
+                    </div>
+                )}
 
-              <button 
-                type="submit" 
-                disabled={isSubmitting}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-900/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                  {isSubmitting ? 'Kontrol Ediliyor...' : 'Listeye Kaydet'}
-              </button>
-          </form>
+                <button 
+                  type="submit" 
+                  disabled={isSubmitting}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-900/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {isSubmitting ? 'Kontrol Ediliyor...' : 'Listeye Kaydet'}
+                </button>
+            </form>
+          </div>
       )}
 
       {/* Word Grid */}

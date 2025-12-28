@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppMode, Word } from './types';
 import { supabase, wordService } from './services/supabaseClient';
@@ -199,13 +198,22 @@ export default function App() {
                 onLogout={async () => { await supabase!.auth.signOut(); setSession(null); }}
                 onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
                 onQuickAdd={() => {
-                    const btn = document.getElementById('quick-add-btn');
+                    const btn = document.getElementById('force-open-add-word');
                     if (btn) btn.click();
                 }}
             />
             {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} />}
             {showSentenceSelectModal && <SentenceModeSelectionModal onClose={() => setShowSentenceSelectModal(false)} onSelectStandard={() => { setShowSentenceSelectModal(false); setMode(AppMode.SENTENCES); }} onSelectCustom={() => { setShowSentenceSelectModal(false); setMode(AppMode.CUSTOM_SETS); }} />}
-            {(wordToDelete || dateToDelete) && <DeleteModal onConfirm={confirmDelete} onCancel={() => { setWordToDelete(null); setDateToDelete(null); }} />}
+            {(wordToDelete || dateToDelete) && (
+                <DeleteModal 
+                    onConfirm={confirmDelete} 
+                    onCancel={() => { setWordToDelete(null); setDateToDelete(null); }} 
+                    description={dateToDelete 
+                        ? "Seçilen tarihte yüklenen kartlar silinecektir onaylıyor musunuz?" 
+                        : "Bu kelimeyi silmek istediğine emin misin? Bu işlem geri alınamaz."
+                    }
+                />
+            )}
           </>
         )}
     </div>
