@@ -3,14 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { AppMode, Word } from './types';
 import { supabase, wordService } from './services/supabaseClient';
 import { extractWordsFromImage } from './services/geminiService';
-import { parseExcelFile } from './services/excelParser';
 import FlashcardMode from './components/FlashcardMode';
 import QuizMode from './components/QuizMode';
 import SentenceMode from './components/SentenceMode';
 import CustomSetStudyMode from './components/CustomSetStudyMode';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
-import NoWordsModal from './components/NoWordsModal';
 import DeleteModal from './components/DeleteModal';
 import SentenceModeSelectionModal from './components/SentenceModeSelectionModal';
 import CustomSetManager from './components/CustomSetManager';
@@ -19,36 +17,37 @@ import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 interface Toast {
   message: string;
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'warning';
 }
+
+// Orijinal Mavi Blok Yükleyici
+export const OriginalPulseLoader = () => (
+    <div className="flex items-center gap-1.5 h-12">
+        <div className="w-8 h-12 bg-blue-600 rounded-lg animate-pulse"></div>
+        <div className="w-8 h-12 bg-blue-500 rounded-lg animate-pulse [animation-delay:0.2s]"></div>
+    </div>
+);
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
-  
-  const [words, setWords] = useState<Word[]>([]);
+  const [words, setWords] = useState<Word[]>(() => wordService.getCachedWords());
   const [customSetWords, setCustomSetWords] = useState<Word[]>([]);
-
   const [mode, setMode] = useState<AppMode>(AppMode.HOME);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showNoWordsModal, setShowNoWordsModal] = useState(false);
   const [showSentenceSelectModal, setShowSentenceSelectModal] = useState(false);
-  
   const [ocrLoading, setOcrLoading] = useState(false);
   const [apiHasKeyError, setApiHasKeyError] = useState(false);
   const [studySet, setStudySet] = useState<Word[]>([]);
   const [importLoading, setImportLoading] = useState(false);
-  
   const [activeSetName, setActiveSetName] = useState<string | null>(null);
-
   const [wordToDelete, setWordToDelete] = useState<string | null>(null);
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
-
   const [toast, setToast] = useState<Toast | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 4500);
   };
 
   useEffect(() => {
@@ -56,38 +55,23 @@ export default function App() {
         setLoadingSession(false);
         return;
     }
-
+    loadWords();
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-          loadWords();
-          loadCustomSets();
-      }
+      if (session) { loadWords(); loadCustomSets(); }
       setLoadingSession(false);
     });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) {
-          loadWords();
-          loadCustomSets();
-      } else {
-          setWords([]);
-          setCustomSetWords([]);
-      }
+      if (session) { loadWords(); loadCustomSets(); } 
+      else { setWords(prev => prev.filter(w => !w.user_id)); setCustomSetWords([]); }
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
   const loadWords = async () => {
     const data = await wordService.getAllWords();
-    const sortedData = data.sort((a, b) => 
-        new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    );
-    setWords(sortedData);
+    setWords(data);
   };
 
   const loadCustomSets = async () => {
@@ -95,112 +79,17 @@ export default function App() {
       setCustomSetWords(data);
   };
 
-  // Edit işleminin anında yansıması için state referansını zorunlu olarak değiştiriyoruz
-  const handleRenameCustomSetLocally = (oldName: string, newName: string) => {
-      setCustomSetWords(prev => {
-          const updated = prev.map(w => 
-              w.set_name === oldName ? { ...w, set_name: newName } : w
-          );
-          // React'ın değişikliği kesin algılaması için yeni bir dizi referansı döndürüyoruz
-          return [...updated];
-      });
-  };
-
-  const prepareStudySet = (type: 'LATEST' | 'RANDOM' = 'RANDOM', sourceWords?: Word[]) => {
-      let source = sourceWords ? [...sourceWords] : [...words];
-      let setSize = 20;
-      
-      if (sourceWords) {
-          setStudySet(source);
-          return;
-      }
-
-      if (words.length > 200) setSize = 10;
-      else if (words.length > 100) setSize = 15;
-
-      if (type === 'RANDOM') {
-          source = source.sort(() => 0.5 - Math.random());
-      }
-      setStudySet(source.slice(0, setSize));
-  };
-
-  const handleModeSelect = (selectedMode: AppMode) => {
-      if (selectedMode === AppMode.SENTENCES) {
-          setShowSentenceSelectModal(true);
-          return;
-      }
-
-      if (selectedMode === AppMode.QUIZ) {
-          if (words.length < 4) {
-              showToast("Test modu için en az 4 farklı kelime eklemelisin!", "error");
-              return;
-          }
-      }
-      
-      if (selectedMode !== AppMode.CUSTOM_SETS && words.length === 0) {
-          setShowNoWordsModal(true);
-          return;
-      }
-
-      prepareStudySet('RANDOM');
-      setMode(selectedMode);
-  };
-
-  const handleSentenceModeStandard = () => {
-      if (words.length === 0) {
-          showToast("Henüz kelime listen boş.", "error");
-          return;
-      }
-      setShowSentenceSelectModal(false);
-      prepareStudySet('RANDOM');
-      setMode(AppMode.SENTENCES);
-  };
-
-  const handleSentenceModeCustom = () => {
-      setShowSentenceSelectModal(false);
-      setMode(AppMode.CUSTOM_SETS);
-  };
-
-  const handleQuickAddRedirect = () => {
-      setShowNoWordsModal(false);
-      setTimeout(() => {
-          const section = document.getElementById('word-list-section');
-          if (section) {
-              section.scrollIntoView({ behavior: 'smooth' });
-              const btn = document.getElementById('quick-add-btn');
-              if (btn) btn.click();
-          }
-      }, 100);
-  };
-
   const handleAddWord = async (english: string, turkish: string, example: string): Promise<boolean> => {
     try {
       const userId = session?.user?.id;
-      const newWord = await wordService.addWord(
-          { english, turkish, example_sentence: example, turkish_sentence: '' },
-          userId
-      );
+      const newWord = await wordService.addWord({ english, turkish, example_sentence: example, turkish_sentence: '' }, userId);
       if (newWord) {
         setWords(prev => [newWord, ...prev]);
         showToast("Kelime başarıyla eklendi.");
         return true;
-      } else {
-        return false;
       }
-    } catch (e) {
-      console.error("Kelime ekleme hatası", e);
       return false;
-    }
-  };
-
-  const handleRequestDelete = (id: string) => {
-    setWordToDelete(id);
-    setDateToDelete(null);
-  };
-
-  const handleRequestDeleteByDate = (date: string) => {
-    setDateToDelete(date);
-    setWordToDelete(null);
+    } catch (e) { return false; }
   };
 
   const confirmDelete = async () => {
@@ -210,170 +99,79 @@ export default function App() {
       setWordToDelete(null);
       showToast("Kelime silindi.");
     }
-    
     if (dateToDelete) {
         const formatDate = (dStr: string) => new Date(dStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'numeric', year: 'numeric' });
         const wordsToDelete = words.filter(w => formatDate(w.created_at || '') === dateToDelete);
-        for (const w of wordsToDelete) {
-            await wordService.deleteWord(w.id);
-        }
+        for (const w of wordsToDelete) { await wordService.deleteWord(w.id); }
         setWords(prev => prev.filter(w => formatDate(w.created_at || '') !== dateToDelete));
         setDateToDelete(null);
         showToast("Seçili tarihteki kelimeler silindi.");
     }
   };
 
-  const getDeleteModalProps = () => {
-      if (wordToDelete) {
-          return {
-              title: "Kelimeyi Sil",
-              description: "Bu kelimeyi silmek istediğine emin misin? Bu işlem geri alınamaz."
-          };
-      }
-      if (dateToDelete) {
-          const formatDate = (dStr: string) => new Date(dStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'numeric', year: 'numeric' });
-          const count = words.filter(w => formatDate(w.created_at || '') === dateToDelete).length;
-          return {
-              title: "Toplu Silme İşlemi",
-              description: `${dateToDelete} tarihinde eklenen toplam ${count} adet kelimeyi silmek üzeresin. Bu işlem geri alınamaz. Emin misin?`
-          };
-      }
-      return { title: "", description: "" };
-  };
-
-  const handleLogout = async () => {
-      if (supabase) {
-          await supabase.auth.signOut();
-          setSession(null);
-          setWords([]);
-          setCustomSetWords([]);
-          showToast("Başarıyla çıkış yapıldı.");
-      }
-  };
-
-  const handleUploadNewSet = (setName: string) => {
-      setActiveSetName(setName);
-      setApiHasKeyError(false); 
-      setShowUploadModal(true);
-  };
-
   const handleImageFileProcess = (file: File) => {
     if (!file) return;
-    const mimeType = file.type;
     setOcrLoading(true);
     setApiHasKeyError(false);
-    
     const reader = new FileReader();
-    
-    reader.onerror = () => {
-        setOcrLoading(false);
-        showToast("Dosya okunamadı. Lütfen farklı bir görsel deneyin.", "error");
-    };
-
     reader.onload = async (evt) => {
       const base64 = evt.target?.result as string;
       try {
-        const extracted = await extractWordsFromImage(base64, mimeType);
-        
+        const extracted = await extractWordsFromImage(base64, file.type);
         if (extracted && extracted.length > 0) {
-          let addedCount = 0;
           if (activeSetName) {
-             addedCount = await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
+             const added = await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
              await loadCustomSets();
-             if (addedCount > 0) {
-                showToast(`"${activeSetName}" setine ${addedCount} yeni cümle eklendi!`);
-             } else {
-                showToast("Eklenecek yeni bir kelime bulunamadı.");
-             }
+             showToast(`${added} yeni cümle seti eklendi!`);
           } else {
-             addedCount = await wordService.bulkAddWords(extracted, session?.user?.id);
+             const addedCount = await wordService.bulkAddWords(extracted, session?.user?.id);
              await loadWords();
-             if (addedCount > 0) {
-                showToast(`${addedCount} yeni kelime analiz edildi ve listenize eklendi!`);
-             } else {
-                showToast("Eklenecek yeni bir kelime bulunamadı.");
-             }
+             showToast(`${addedCount} yeni kelime eklendi!`);
           }
-          
           setShowUploadModal(false);
-          setActiveSetName(null);
-        } else {
-          showToast("Görselde okunabilir veri bulunamadı.", "error");
-        }
+        } else { showToast("Görselde işlenecek metin bulunamadı.", "warning"); }
       } catch (error: any) {
-        console.error("İşleme hatası:", error);
-        if (error.message === "MISSING_API_KEY" || error.message === "INVALID_API_KEY") {
+        if (error.message === "QUOTA_EXCEEDED") {
+            showToast("Kullanım sınırına ulaşıldı, lütfen biraz bekleyin. Şimdilik manuel ekleme ile devam edebilirsiniz.", "error");
+        } else if (error.message === "MISSING_API_KEY" || error.message === "INVALID_API_KEY") {
             setApiHasKeyError(true);
         } else {
-            showToast(error.message || "Görsel işlenirken bir hata oluştu.", "error");
+            showToast(error.message, "error");
         }
-      } finally {
-        setOcrLoading(false);
-      }
+      } finally { setOcrLoading(false); }
     };
     reader.readAsDataURL(file);
   };
 
-  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      
-      setImportLoading(true);
-      try {
-          const extractedWords = await parseExcelFile(file);
-          if (extractedWords && extractedWords.length > 0) {
-              const addedCount = await wordService.bulkAddWords(extractedWords, session?.user?.id);
-              await loadWords();
-              if (addedCount > 0) {
-                  showToast(`${addedCount} yeni kelime başarıyla eklendi.`);
-              } else {
-                  showToast("Eklenecek yeni bir kelime bulunamadı.");
-              }
-          } else {
-              showToast("Dosyada uygun formatta kelime bulunamadı.", "error");
-          }
-      } catch (error: any) {
-          showToast("Excel yükleme hatası: " + error.message, "error");
-      } finally {
-          setImportLoading(false);
-          e.target.value = '';
-      }
-  };
-
   if (loadingSession) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-black">
-        <div className="w-12 h-12 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
-        <p className="text-blue-500 font-bold tracking-widest text-sm uppercase">LinguaCard Başlatılıyor</p>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-black relative">
+        <OriginalPulseLoader />
+        <p className="text-blue-500 font-black tracking-widest text-xs uppercase mt-8 animate-pulse">LinguaCard Başlatılıyor</p>
     </div>
   );
 
   if (!session) return <Auth />;
 
-  const modalProps = getDeleteModalProps();
-
   return (
     <div className="bg-black min-h-screen text-white font-['Plus_Jakarta_Sans']">
         {toast && (
-          <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[10001] animate-fadeIn">
+          <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[10001] animate-fadeIn w-full max-w-lg px-4">
             <div className={`flex items-center gap-3 px-6 py-4 rounded-3xl border shadow-2xl backdrop-blur-xl ${
-              toast.type === 'success' 
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                : 'bg-red-500/10 border-red-500/20 text-red-400'
+                toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 
+                toast.type === 'warning' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                'bg-red-500/10 border-red-500/20 text-red-400'
             }`}>
               {toast.type === 'success' ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
-              <span className="font-black text-sm tracking-wide">{toast.message}</span>
-              <button onClick={() => setToast(null)} className="ml-4 p-1 hover:bg-white/10 rounded-lg transition-all">
-                <X size={16} />
-              </button>
+              <span className="font-black text-sm flex-1">{toast.message}</span>
+              <button onClick={() => setToast(null)} className="p-1 rounded-lg hover:bg-white/10"><X size={16} /></button>
             </div>
           </div>
         )}
 
         {importLoading && (
              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex flex-col items-center justify-center">
-                 <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mb-6"></div>
-                 <h2 className="text-2xl font-black text-white">Excel İşleniyor</h2>
-                 <p className="text-slate-400 mt-2">Kelimeler veritabanına aktarılıyor...</p>
+                 <OriginalPulseLoader />
+                 <h2 className="text-2xl font-black text-white mt-8">Excel İşleniyor</h2>
              </div>
         )}
 
@@ -383,59 +181,34 @@ export default function App() {
         {mode === AppMode.CUSTOM_SET_STUDY && <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />}
         
         {mode === AppMode.CUSTOM_SETS && (
-            <>
-                <CustomSetManager 
-                    words={customSetWords} 
-                    onExit={() => setMode(AppMode.HOME)} 
-                    onUploadNewSet={handleUploadNewSet}
-                    onRefresh={loadCustomSets}
-                    onRenameCustomSetLocally={handleRenameCustomSetLocally}
-                    onPlaySet={(setWords) => {
-                        prepareStudySet('RANDOM', setWords);
-                        setMode(AppMode.CUSTOM_SET_STUDY);
-                    }}
-                />
-                 {showUploadModal && (
-                    <UploadModal 
-                        onClose={() => setShowUploadModal(false)}
-                        onFileSelect={handleImageFileProcess}
-                        isLoading={ocrLoading}
-                        isKeyInvalid={apiHasKeyError}
-                    />
-                )}
-            </>
+            <CustomSetManager 
+                words={customSetWords} 
+                onExit={() => setMode(AppMode.HOME)} 
+                onUploadNewSet={set => { setActiveSetName(set); setShowUploadModal(true); }}
+                onRefresh={loadCustomSets}
+                onRenameCustomSetLocally={(old, name) => setCustomSetWords(prev => prev.map(w => w.set_name === old ? {...w, set_name: name} : w))}
+                onPlaySet={set => { setStudySet(set); setMode(AppMode.CUSTOM_SET_STUDY); }}
+            />
         )}
 
         {mode === AppMode.HOME && (
           <>
             <Dashboard 
-                userEmail={session.user.email}
-                words={words}
-                onModeSelect={handleModeSelect}
-                onAddWord={handleAddWord}
-                onDeleteWord={handleRequestDelete}
-                onDeleteByDate={handleRequestDeleteByDate}
-                onLogout={handleLogout}
-                onOpenUpload={() => { 
-                    setActiveSetName(null); 
-                    setApiHasKeyError(false);
-                    setShowUploadModal(true); 
+                userEmail={session.user.email} words={words} onModeSelect={mode => {
+                    if (mode === AppMode.SENTENCES) setShowSentenceSelectModal(true);
+                    else { setStudySet([...words].sort(() => 0.5 - Math.random()).slice(0, 20)); setMode(mode); }
                 }}
-                onQuickAdd={handleQuickAddRedirect}
-                onExcelUpload={handleExcelUpload}
+                onAddWord={handleAddWord} onDeleteWord={id => setWordToDelete(id)} onDeleteByDate={d => setDateToDelete(d)}
+                onLogout={async () => { await supabase!.auth.signOut(); setSession(null); }}
+                onOpenUpload={() => { setActiveSetName(null); setApiHasKeyError(false); setShowUploadModal(true); }}
+                onQuickAdd={() => {
+                    const btn = document.getElementById('quick-add-btn');
+                    if (btn) btn.click();
+                }}
             />
-            {showUploadModal && (
-                <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} isKeyInvalid={apiHasKeyError} />
-            )}
-            {showSentenceSelectModal && (
-                <SentenceModeSelectionModal onClose={() => setShowSentenceSelectModal(false)} onSelectStandard={handleSentenceModeStandard} onSelectCustom={handleSentenceModeCustom} />
-            )}
-            {showNoWordsModal && (
-                <NoWordsModal onClose={() => setShowNoWordsModal(false)} onOpenUpload={() => { setActiveSetName(null); setApiHasKeyError(false); setShowUploadModal(true); }} onQuickAdd={handleQuickAddRedirect} />
-            )}
-            {(wordToDelete || dateToDelete) && (
-                <DeleteModal title={modalProps.title} description={modalProps.description} onConfirm={confirmDelete} onCancel={() => { setWordToDelete(null); setDateToDelete(null); }} />
-            )}
+            {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} isKeyInvalid={apiHasKeyError} />}
+            {showSentenceSelectModal && <SentenceModeSelectionModal onClose={() => setShowSentenceSelectModal(false)} onSelectStandard={() => { setShowSentenceSelectModal(false); setMode(AppMode.SENTENCES); }} onSelectCustom={() => { setShowSentenceSelectModal(false); setMode(AppMode.CUSTOM_SETS); }} />}
+            {(wordToDelete || dateToDelete) && <DeleteModal onConfirm={confirmDelete} onCancel={() => { setWordToDelete(null); setDateToDelete(null); }} />}
           </>
         )}
     </div>

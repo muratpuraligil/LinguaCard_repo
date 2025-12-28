@@ -12,7 +12,6 @@ export interface ExtractedWord {
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
-  // Vite ortamında environment variable'lara erişim
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
@@ -66,11 +65,19 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       return [];
     }
   } catch (error: any) {
-    console.error("Gemini API Hatası:", error);
+    console.error("Gemini API Hatası Detayı:", error);
     const errMsg = error.message || "";
+    
+    // Kota aşımı kontrolü (429 Hatası)
+    if (errMsg.includes("429") || errMsg.toLowerCase().includes("exhausted") || errMsg.toLowerCase().includes("quota")) {
+        throw new Error("QUOTA_EXCEEDED");
+    }
+    
+    // Geçersiz key kontrolü
     if (errMsg.includes("API key not valid") || errMsg.includes("403") || errMsg.includes("400")) {
         throw new Error("INVALID_API_KEY");
     }
-    throw new Error("Görsel analiz edilemedi. Lütfen internet bağlantınızı veya API anahtarınızı kontrol edin.");
+    
+    throw new Error("Görsel analiz edilemedi. Lütfen bağlantınızı kontrol edin.");
   }
 };

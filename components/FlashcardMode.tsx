@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Word, LanguageDirection } from '../types';
 import { ArrowLeft, Check, Volume2, Languages, MousePointerClick, RotateCcw, Trophy, Home } from 'lucide-react';
@@ -17,7 +18,6 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [direction, setDirection] = useState<LanguageDirection>(() => {
-    // Varsayılan olarak TR -> EN (TR_EN)
     return LanguageDirection.TR_EN;
   });
   
@@ -35,7 +35,6 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
     setIsFlipped(false);
   }, [direction]);
 
-  // Konfeti Efekti
   const triggerSuccessConfetti = () => {
     const duration = 3000;
     const end = Date.now() + duration;
@@ -46,7 +45,7 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
         angle: 60,
         spread: 55,
         origin: { x: 0 },
-        colors: ['#3b82f6', '#eab308', '#ffffff'] // Mavi, Sarı, Beyaz
+        colors: ['#3b82f6', '#eab308', '#ffffff']
       });
       confetti({
         particleCount: 2,
@@ -90,11 +89,9 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
       setDirection(prev => prev === LanguageDirection.EN_TR ? LanguageDirection.TR_EN : LanguageDirection.EN_TR);
   };
 
-  // --- BİTİŞ EKRANI ---
   if (isFinished) {
       return (
         <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 font-['Plus_Jakarta_Sans'] relative overflow-hidden">
-            {/* Arka plan efekti */}
             <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-yellow-500/10 via-black to-black"></div>
             
             <div className="relative z-10 w-full max-w-md bg-zinc-900 border border-yellow-500/20 p-10 rounded-[48px] text-center shadow-2xl animate-float">
@@ -140,10 +137,8 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
 
   return (
     <div className="min-h-screen bg-black flex flex-col font-['Plus_Jakarta_Sans'] relative overflow-hidden">
-      {/* Background Decor */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-yellow-500/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/3"></div>
       
-      {/* Header */}
       <div className="flex justify-between items-center p-8 relative z-10">
         <button onClick={onExit} className="p-4 bg-white/5 border border-white/5 rounded-2xl text-slate-400 hover:text-white transition-all">
             <ArrowLeft size={24} />
@@ -157,7 +152,6 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
         </button>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex items-center justify-center p-6 md:p-8 relative z-10">
         <div 
             className="relative w-full max-w-sm aspect-[4/6] perspective-1000 cursor-pointer group"
@@ -166,25 +160,21 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
             <div className={`relative w-full h-full transition-all duration-700 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
                 
                 {/* FRONT CARD */}
-                <div className="absolute w-full h-full bg-zinc-900 border-2 border-zinc-700 rounded-[56px] flex flex-col items-center justify-center p-6 backface-hidden shadow-2xl group-hover:border-blue-500/50 transition-colors">
+                <div className="absolute w-full h-full bg-zinc-900 border-2 border-zinc-700 rounded-[56px] flex flex-col items-center justify-center p-10 backface-hidden shadow-2xl group-hover:border-blue-500/50 transition-colors">
                     
-                    {/* TOP LABEL (Absolute) */}
                     <div className="absolute top-12 left-0 w-full flex justify-center">
                         <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] bg-black/20 px-4 py-2 rounded-full">
                             {direction === LanguageDirection.EN_TR ? 'İngilizce' : 'Türkçe'}
                         </p>
                     </div>
 
-                    {/* MAIN WORD (Center) */}
-                    {/* Padding ekleyerek uzun kelimelerin üst/alt öğelere çarpmasını engelliyoruz */}
-                    <div className="w-full flex items-center justify-center py-20">
-                        <h2 className="text-4xl md:text-5xl font-black text-white text-center leading-tight tracking-tighter drop-shadow-lg break-words px-4">
+                    <div className="flex-1 flex items-center justify-center w-full">
+                        <h2 className="text-4xl md:text-5xl font-black text-white text-center leading-tight tracking-tighter drop-shadow-lg break-words w-full">
                             {frontText}
                         </h2>
                     </div>
                     
-                    {/* BOTTOM ACTIONS (Absolute) */}
-                    <div className="absolute bottom-10 left-0 w-full flex flex-col items-center gap-6">
+                    <div className="mt-auto flex flex-col items-center gap-6">
                         <button 
                             onClick={(e) => { e.stopPropagation(); speak(frontText, frontLang); }} 
                             className="p-5 bg-black/30 text-slate-300 rounded-3xl hover:text-blue-400 hover:bg-black/50 transition-all active:scale-90"
@@ -200,30 +190,34 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
                 </div>
 
                 {/* BACK CARD */}
-                <div className="absolute w-full h-full bg-yellow-500 rounded-[56px] flex flex-col items-center justify-center p-6 backface-hidden rotate-y-180 shadow-2xl shadow-yellow-500/20 border-4 border-yellow-400">
+                <div className="absolute w-full h-full bg-yellow-500 rounded-[56px] flex flex-col items-center justify-center p-10 backface-hidden rotate-y-180 shadow-2xl shadow-yellow-500/20 border-4 border-yellow-400 text-center">
                     
-                    {/* TOP LABEL (Absolute - Same Position) */}
                     <div className="absolute top-12 left-0 w-full flex justify-center">
                         <p className="text-black/40 text-[10px] font-black uppercase tracking-[0.3em] bg-black/5 px-4 py-2 rounded-full">
                             Karşılığı
                         </p>
                     </div>
 
-                    {/* MAIN WORD (Center - Same Position) */}
-                    <div className="w-full flex items-center justify-center py-20">
-                        <h2 className="text-4xl md:text-5xl font-black text-black text-center leading-tight tracking-tighter break-words px-4">
+                    <div className="flex-1 flex items-center justify-center w-full">
+                        <h2 className="text-4xl md:text-5xl font-black text-black leading-tight tracking-tighter break-words w-full">
                             {backText}
                         </h2>
                     </div>
                     
-                    {/* BOTTOM CONTENT (Absolute - Same Start Position) */}
-                    <div className="absolute bottom-10 left-0 w-full flex flex-col items-center px-6">
+                    <div className="mt-auto w-full flex flex-col items-center">
                         
-                        {/* Example Sentence Box */}
-                        <div className="bg-black/10 backdrop-blur-md p-5 rounded-[28px] w-full border border-black/5 mb-6">
-                            <p className="text-black text-center font-bold italic text-base md:text-lg leading-relaxed line-clamp-3">
-                                "{currentWord.example_sentence}"
-                            </p>
+                        {/* Example Sentences Container */}
+                        <div className="bg-black/10 backdrop-blur-md p-6 rounded-[32px] w-full border border-black/5 mb-6 space-y-3">
+                            {currentWord.example_sentence && (
+                              <p className="text-black font-bold italic text-base md:text-lg leading-snug">
+                                  "{currentWord.example_sentence}"
+                              </p>
+                            )}
+                            {currentWord.turkish_sentence && (
+                              <p className="text-black/60 font-black text-xs md:text-sm uppercase tracking-tight border-t border-black/5 pt-3 leading-relaxed">
+                                  {currentWord.turkish_sentence}
+                              </p>
+                            )}
                         </div>
 
                         <button 
@@ -239,7 +233,6 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
         </div>
       </div>
 
-      {/* Footer Controls */}
       <div className="pb-16 pt-4 flex justify-center relative z-10">
           <button 
             onClick={handleNext} 
