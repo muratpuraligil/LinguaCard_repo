@@ -37,7 +37,6 @@ export default function App() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showSentenceSelectModal, setShowSentenceSelectModal] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
-  const [apiHasKeyError, setApiHasKeyError] = useState(false);
   const [studySet, setStudySet] = useState<Word[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   const [activeSetName, setActiveSetName] = useState<string | null>(null);
@@ -112,7 +111,6 @@ export default function App() {
   const handleImageFileProcess = (file: File) => {
     if (!file) return;
     setOcrLoading(true);
-    setApiHasKeyError(false);
     const reader = new FileReader();
     reader.onload = async (evt) => {
       const base64 = evt.target?.result as string;
@@ -131,10 +129,9 @@ export default function App() {
           setShowUploadModal(false);
         } else { showToast("Görselde işlenecek metin bulunamadı.", "warning"); }
       } catch (error: any) {
+        console.error("OCR Hatası:", error.message);
         if (error.message === "QUOTA_EXCEEDED") {
             showToast("Kullanım sınırına ulaşıldı, lütfen biraz bekleyin. Şimdilik manuel ekleme ile devam edebilirsiniz.", "error");
-        } else if (error.message === "MISSING_API_KEY" || error.message === "INVALID_API_KEY") {
-            setApiHasKeyError(true);
         } else {
             showToast(error.message, "error");
         }
@@ -200,13 +197,13 @@ export default function App() {
                 }}
                 onAddWord={handleAddWord} onDeleteWord={id => setWordToDelete(id)} onDeleteByDate={d => setDateToDelete(d)}
                 onLogout={async () => { await supabase!.auth.signOut(); setSession(null); }}
-                onOpenUpload={() => { setActiveSetName(null); setApiHasKeyError(false); setShowUploadModal(true); }}
+                onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
                 onQuickAdd={() => {
                     const btn = document.getElementById('quick-add-btn');
                     if (btn) btn.click();
                 }}
             />
-            {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} isKeyInvalid={apiHasKeyError} />}
+            {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} />}
             {showSentenceSelectModal && <SentenceModeSelectionModal onClose={() => setShowSentenceSelectModal(false)} onSelectStandard={() => { setShowSentenceSelectModal(false); setMode(AppMode.SENTENCES); }} onSelectCustom={() => { setShowSentenceSelectModal(false); setMode(AppMode.CUSTOM_SETS); }} />}
             {(wordToDelete || dateToDelete) && <DeleteModal onConfirm={confirmDelete} onCancel={() => { setWordToDelete(null); setDateToDelete(null); }} />}
           </>
