@@ -119,7 +119,7 @@ const SentenceMode: React.FC<SentenceModeProps> = ({ words, onExit }) => {
                 value={userInput}
                 onChange={(e) => setUserInput(e.target.value)}
                 placeholder="Çevirini buraya yaz..."
-                className="w-full p-8 rounded-[40px] bg-zinc-800 border-2 border-white/5 focus:border-purple-500/50 focus:bg-zinc-700/50 outline-none h-44 resize-none text-xl font-bold transition-all text-white placeholder:text-zinc-500 shadow-inner"
+                className="w-full p-8 rounded-[40px] bg-zinc-800 border-2 border-white/20 focus:border-purple-500/50 focus:bg-zinc-700/50 outline-none h-44 resize-none text-xl font-bold transition-all text-white placeholder:text-zinc-500 shadow-inner"
                 disabled={status === 'CORRECT'}
             />
 
