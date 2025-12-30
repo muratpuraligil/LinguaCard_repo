@@ -186,32 +186,35 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
                 {/* Turkish Meaning */}
                 <p className="text-slate-500 font-bold text-lg mb-6">{word.turkish}</p>
                 
-                {/* Example Sentence Box - Clickable & Animated */}
+                {/* 3D Flip Sentence Card */}
                 {word.example_sentence ? (
                     <div 
+                        className="perspective-1000 w-full mb-6 cursor-pointer group/sentence"
                         onClick={(e) => { e.stopPropagation(); handleSentenceClick(word.id); }}
-                        className={`w-full p-6 rounded-3xl border mb-6 flex-1 cursor-pointer transition-all duration-300 relative group/sentence transform ${
-                            isSentenceFlipped 
-                            ? 'bg-blue-600 border-blue-500 scale-[1.02] shadow-lg shadow-blue-900/20' 
-                            : 'bg-zinc-800/80 border-white/5 hover:bg-zinc-800 hover:border-white/20'
-                        }`}
                     >
-                        <p className={`text-sm font-medium leading-relaxed italic transition-all duration-300 ${
-                            isSentenceFlipped 
-                            ? 'text-white font-bold' 
-                            : 'text-slate-300'
-                        }`}>
-                            "{isSentenceFlipped ? (word.turkish_sentence || 'Çeviri bulunamadı') : word.example_sentence}"
-                        </p>
-
-                        {/* Hint Icon (Only visible when not flipped) */}
-                        {!isSentenceFlipped && (
-                            <div className="absolute bottom-3 right-4 opacity-0 group-hover/sentence:opacity-100 transition-opacity">
-                                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
-                                    <Languages size={12} /> Çevir
-                                 </span>
+                        <div className={`relative w-full transition-transform duration-700 transform-style-3d grid ${isSentenceFlipped ? 'rotate-y-180' : ''}`}>
+                            
+                            {/* FRONT FACE (English) */}
+                            <div className="col-start-1 row-start-1 backface-hidden bg-zinc-800/80 border border-white/5 p-6 rounded-3xl hover:bg-zinc-800 hover:border-white/20 transition-colors flex items-center min-h-[100px]">
+                                <p className="text-sm font-medium leading-relaxed text-slate-300 italic w-full">
+                                    "{word.example_sentence}"
+                                </p>
+                                {/* Hint Icon */}
+                                <div className="absolute bottom-3 right-4 opacity-0 group-hover/sentence:opacity-100 transition-opacity">
+                                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
+                                        <Languages size={12} /> Çevir
+                                     </span>
+                                </div>
                             </div>
-                        )}
+
+                            {/* BACK FACE (Turkish) */}
+                            <div className="col-start-1 row-start-1 backface-hidden rotate-y-180 bg-blue-600 border border-blue-500 p-6 rounded-3xl shadow-lg shadow-blue-900/20 flex items-center min-h-[100px]">
+                                <p className="text-sm font-medium leading-relaxed text-white font-bold italic w-full">
+                                    "{word.turkish_sentence || 'Çeviri bulunamadı'}"
+                                </p>
+                            </div>
+                            
+                        </div>
                     </div>
                 ) : (
                     <div className="flex-1 mb-6 w-full"></div>
