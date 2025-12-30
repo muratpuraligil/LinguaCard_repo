@@ -32,7 +32,23 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
             },
           },
           {
-            text: "Analyze the English words and meanings in this image. Convert to JSON format: english, turkish, example_sentence, turkish_sentence. Only return the JSON array.",
+            text: `Analyze the text in this image for vocabulary learning. Follow these TWO strict rules for extraction:
+
+            1. **Explicit Lists & Matches:** Extract all English words that are presented with their Turkish meanings (e.g. lists, matching exercises like "Lazy -> Tembel", "Smart -> Zeki").
+
+            2. **Highlighted/Marked Words in Sentences:**
+               - Scan sentences for specific words that are **visually highlighted** (e.g. has a colored background like pink/red, underlined, or different text color) while the rest of the sentence is standard text.
+               - Extract **ONLY** the highlighted word as the vocabulary item.
+               - **Example:** In the sentence "Sorry, I'm a bit late", if the word "bit" has a pink background or is colored differently, extract ONLY "bit".
+               - Do NOT extract random words from sentences unless they are visually distinguished/marked.
+
+            For each extracted item, return a JSON object with:
+            - 'english': The extracted word.
+            - 'turkish': The Turkish meaning (if visible in the image, otherwise translate the word).
+            - 'example_sentence': The full sentence where the word was found (or generate a simple one).
+            - 'turkish_sentence': Turkish translation of the example sentence.
+            
+            Return ONLY the JSON array.`,
           },
         ],
       },

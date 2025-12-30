@@ -26,6 +26,14 @@ const setLocalWords = (words: Word[]) => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(words));
 };
 
+// TitleCase Helper Fonksiyonu
+const toTitleCase = (str: string): string => {
+  if (!str) return '';
+  return str.split(' ')
+    .map(word => word.charAt(0).toLocaleUpperCase('tr-TR') + word.slice(1).toLocaleLowerCase('tr-TR'))
+    .join(' ');
+};
+
 const mapDbToApp = (dbRecord: any): Word => ({
   id: dbRecord.id,
   english: dbRecord.english || dbRecord.word_en || '',
@@ -98,13 +106,19 @@ export const wordService = {
   },
 
   async addWord(word: Omit<Word, 'id' | 'created_at'>, userId?: string): Promise<Word | null> {
+    const formattedWord = {
+        ...word,
+        english: toTitleCase(word.english),
+        turkish: toTitleCase(word.turkish)
+    };
+
     const currentLocal = getLocalWords();
-    const isDuplicate = currentLocal.some(w => w.english.toLowerCase().trim() === word.english.toLowerCase().trim());
+    const isDuplicate = currentLocal.some(w => w.english.toLowerCase().trim() === formattedWord.english.toLowerCase().trim());
     
     if (isDuplicate) return null;
 
     let finalWord: Word = {
-      ...word,
+      ...formattedWord,
       id: crypto.randomUUID(),
       created_at: new Date().toISOString(),
       user_id: userId
@@ -116,7 +130,7 @@ export const wordService = {
 
     if (isSupabaseConfigured && supabase && userId) {
       try {
-        const payload = mapAppToDb(word, userId);
+        const payload = mapAppToDb(formattedWord, userId);
         const { data, error } = await supabase.from('words').insert([payload]).select().single();
         if (!error && data) {
             const dbWord = mapDbToApp(data);
@@ -135,10 +149,16 @@ export const wordService = {
   async bulkAddWords(wordsToAdd: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<number> {
     if (wordsToAdd.length === 0) return 0;
     
+    const formattedWordsToAdd = wordsToAdd.map(w => ({
+        ...w,
+        english: toTitleCase(w.english),
+        turkish: toTitleCase(w.turkish)
+    }));
+
     const currentWords = getLocalWords();
     const existingEnglish = new Set(currentWords.map(w => w.english.toLowerCase().trim()));
     
-    const newWords = wordsToAdd.filter(w => !existingEnglish.has(w.english.toLowerCase().trim()));
+    const newWords = formattedWordsToAdd.filter(w => !existingEnglish.has(w.english.toLowerCase().trim()));
     
     if (newWords.length === 0) return 0;
 
@@ -173,8 +193,8 @@ export const wordService = {
        const payload = items
         .filter(item => !existingSetWords.has(item.english.toLowerCase().trim()))
         .map(item => ({
-            english: item.english.trim(),
-            turkish: item.turkish.trim(),
+            english: toTitleCase(item.english.trim()),
+            turkish: toTitleCase(item.turkish.trim()),
             example_sentence: item.example_sentence.trim(),
             turkish_sentence: item.turkish_sentence.trim(),
             user_id: userId,

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Word } from '../types';
-import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle } from 'lucide-react';
+import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle, Languages } from 'lucide-react';
 
 interface WordListProps {
   words: Word[];
@@ -18,6 +19,9 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
   const [newEx, setNewEx] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Hangi kelimenin cümlesinin çevrildiğini tutar
+  const [flippedSentenceId, setFlippedSentenceId] = useState<string | null>(null);
 
   const filteredWords = words.filter(w => 
     w.english.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -60,6 +64,17 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
     } else {
         setFormError('Bu kelime zaten listenizde mevcut!');
     }
+  };
+
+  const handleSentenceClick = (id: string) => {
+    if (flippedSentenceId === id) return; // Zaten açıksa işlem yapma (veya kapatmak istersen null yap)
+    
+    setFlippedSentenceId(id);
+
+    // 3 saniye sonra otomatik kapat
+    setTimeout(() => {
+        setFlippedSentenceId(prev => prev === id ? null : prev);
+    }, 3000);
   };
 
   // Input değiştiğinde hatayı temizle
@@ -156,6 +171,8 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredWords.map((word) => {
             const dateStr = formatDate(word.created_at);
+            const isSentenceFlipped = flippedSentenceId === word.id;
+
             return (
               <div key={word.id} className="bg-zinc-900 p-8 rounded-[40px] border-b-4 border-slate-700 hover:border-slate-500 transition-all group relative overflow-hidden flex flex-col h-full items-start text-left">
                 {/* Header: English + Speaker */}
@@ -169,10 +186,32 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
                 {/* Turkish Meaning */}
                 <p className="text-slate-500 font-bold text-lg mb-6">{word.turkish}</p>
                 
-                {/* Example Sentence Box - Grey Background & Spaced */}
+                {/* Example Sentence Box - Clickable & Animated */}
                 {word.example_sentence ? (
-                    <div className="w-full bg-zinc-800/80 p-6 rounded-3xl border border-white/5 mb-6 flex-1">
-                        <p className="text-sm text-slate-300 font-medium italic leading-relaxed">"{word.example_sentence}"</p>
+                    <div 
+                        onClick={(e) => { e.stopPropagation(); handleSentenceClick(word.id); }}
+                        className={`w-full p-6 rounded-3xl border mb-6 flex-1 cursor-pointer transition-all duration-300 relative group/sentence transform ${
+                            isSentenceFlipped 
+                            ? 'bg-blue-600 border-blue-500 scale-[1.02] shadow-lg shadow-blue-900/20' 
+                            : 'bg-zinc-800/80 border-white/5 hover:bg-zinc-800 hover:border-white/20'
+                        }`}
+                    >
+                        <p className={`text-sm font-medium leading-relaxed italic transition-all duration-300 ${
+                            isSentenceFlipped 
+                            ? 'text-white font-bold' 
+                            : 'text-slate-300'
+                        }`}>
+                            "{isSentenceFlipped ? (word.turkish_sentence || 'Çeviri bulunamadı') : word.example_sentence}"
+                        </p>
+
+                        {/* Hint Icon (Only visible when not flipped) */}
+                        {!isSentenceFlipped && (
+                            <div className="absolute bottom-3 right-4 opacity-0 group-hover/sentence:opacity-100 transition-opacity">
+                                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
+                                    <Languages size={12} /> Çevir
+                                 </span>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="flex-1 mb-6 w-full"></div>
