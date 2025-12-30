@@ -221,7 +221,37 @@ export default function App() {
                 }}
             />
             {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} />}
-            {showSentenceSelectModal && <SentenceModeSelectionModal onClose={() => setShowSentenceSelectModal(false)} onSelectStandard={() => { setShowSentenceSelectModal(false); setMode(AppMode.SENTENCES); }} onSelectCustom={() => { setShowSentenceSelectModal(false); setMode(AppMode.CUSTOM_SETS); }} />}
+            {showSentenceSelectModal && (
+                <SentenceModeSelectionModal 
+                    onClose={() => setShowSentenceSelectModal(false)} 
+                    onSelectStandard={() => { 
+                        setShowSentenceSelectModal(false); 
+                        
+                        // Cümle Modu Resume Mantığı
+                        const savedSetString = localStorage.getItem('lingua_active_sentence_set');
+                        const savedIndex = localStorage.getItem('lingua_sentence_index');
+                        
+                        // Kayıtlı set varsa yükle
+                        if (savedSetString && savedIndex) {
+                             setStudySet(JSON.parse(savedSetString));
+                        } else {
+                             // Yoksa yeni oluştur
+                             const validWords = words.filter(w => w.example_sentence && w.example_sentence.length > 3);
+                             const newSet = [...validWords].sort(() => 0.5 - Math.random()).slice(0, 20);
+                             
+                             setStudySet(newSet);
+                             localStorage.setItem('lingua_active_sentence_set', JSON.stringify(newSet));
+                             localStorage.setItem('lingua_sentence_index', '0');
+                        }
+                        
+                        setMode(AppMode.SENTENCES); 
+                    }} 
+                    onSelectCustom={() => { 
+                        setShowSentenceSelectModal(false); 
+                        setMode(AppMode.CUSTOM_SETS); 
+                    }} 
+                />
+            )}
             {(wordToDelete || dateToDelete) && (
                 <DeleteModal 
                     onConfirm={confirmDelete} 

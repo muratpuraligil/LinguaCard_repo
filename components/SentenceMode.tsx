@@ -27,7 +27,17 @@ const SentenceMode: React.FC<SentenceModeProps> = ({ words, onExit }) => {
 
   const checkAnswer = () => {
     if (!currentWord) return;
-    const normalize = (str: string) => str.toLowerCase().replace(/[.,!?;]/g, '').trim();
+    
+    // Normalize fonksiyonu: Büyük/küçük harf, tırnak işaretleri ve noktalama işaretlerini temizler.
+    const normalize = (str: string) => {
+        return str
+            .toLowerCase()
+            .replace(/["'“”‘’]/g, '') // Tırnak işaretlerini kaldır
+            .replace(/[.,!?;:]/g, '')  // Noktalama işaretlerini kaldır
+            .replace(/\s+/g, ' ')      // Fazla boşlukları tek boşluğa indir
+            .trim();
+    };
+
     const correct = normalize(direction === LanguageDirection.TR_EN ? currentWord.example_sentence : currentWord.turkish_sentence);
     const input = normalize(userInput);
 
@@ -41,7 +51,9 @@ const SentenceMode: React.FC<SentenceModeProps> = ({ words, onExit }) => {
       setUserInput('');
       setStatus('IDLE');
     } else {
+        // Test bittiğinde kayıtlı seti ve indexi temizle
         localStorage.removeItem('lingua_sentence_index');
+        localStorage.removeItem('lingua_active_sentence_set');
         onExit();
     }
   };
@@ -107,7 +119,7 @@ const SentenceMode: React.FC<SentenceModeProps> = ({ words, onExit }) => {
                 value={userInput}
                 onChange={(e) => setUserInput(e.target.value)}
                 placeholder="Çevirini buraya yaz..."
-                className="w-full p-8 rounded-[40px] bg-black border-2 border-white/5 focus:border-purple-500/50 outline-none h-44 resize-none text-xl font-bold transition-all text-white placeholder:text-slate-800"
+                className="w-full p-8 rounded-[40px] bg-zinc-800 border-2 border-white/5 focus:border-purple-500/50 focus:bg-zinc-700/50 outline-none h-44 resize-none text-xl font-bold transition-all text-white placeholder:text-zinc-500 shadow-inner"
                 disabled={status === 'CORRECT'}
             />
 
