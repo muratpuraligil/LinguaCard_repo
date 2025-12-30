@@ -1,7 +1,7 @@
 
 import React, { useEffect } from 'react';
 import { Image as ImageIcon, X, Keyboard, Sparkles } from 'lucide-react';
-import { OriginalPulseLoader } from '../App';
+import { PulseLoader } from './Loader';
 
 interface UploadModalProps {
   onClose: () => void;
@@ -67,7 +67,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
 
         {isLoading && (
             <div className="absolute inset-0 bg-black/95 rounded-[48px] flex flex-col items-center justify-center z-50 backdrop-blur-md animate-fadeIn">
-                <OriginalPulseLoader />
+                <PulseLoader />
                 <p className="font-black text-white text-2xl tracking-tight mt-10">Görsel İşleniyor</p>
                 <div className="flex items-center gap-2 mt-4 text-blue-400">
                     <Sparkles size={16} className="animate-pulse" />

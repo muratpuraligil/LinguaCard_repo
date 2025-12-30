@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AppMode, Word } from './types';
 import { supabase, wordService } from './services/supabaseClient';
@@ -12,20 +13,13 @@ import DeleteModal from './components/DeleteModal';
 import SentenceModeSelectionModal from './components/SentenceModeSelectionModal';
 import CustomSetManager from './components/CustomSetManager';
 import Auth from './components/Auth';
+import { PulseLoader } from './components/Loader';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 interface Toast {
   message: string;
   type: 'success' | 'error' | 'warning';
 }
-
-// Orijinal Mavi Blok Yükleyici
-export const OriginalPulseLoader = () => (
-    <div className="flex items-center gap-1.5 h-12">
-        <div className="w-8 h-12 bg-blue-600 rounded-lg animate-pulse"></div>
-        <div className="w-8 h-12 bg-blue-500 rounded-lg animate-pulse [animation-delay:0.2s]"></div>
-    </div>
-);
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -141,7 +135,7 @@ export default function App() {
 
   if (loadingSession) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-black relative">
-        <OriginalPulseLoader />
+        <PulseLoader />
         <p className="text-blue-500 font-black tracking-widest text-xs uppercase mt-8 animate-pulse">LinguaCard Başlatılıyor</p>
     </div>
   );
@@ -166,7 +160,7 @@ export default function App() {
 
         {importLoading && (
              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex flex-col items-center justify-center">
-                 <OriginalPulseLoader />
+                 <PulseLoader />
                  <h2 className="text-2xl font-black text-white mt-8">Excel İşleniyor</h2>
              </div>
         )}

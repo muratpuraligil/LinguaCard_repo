@@ -4,8 +4,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  // GitHub Pages URL yapısı: kullanıcıadı.github.io/LinguaCard_repo/
-  base: '/LinguaCard_repo/',
+  // GitHub Pages URL yapısı: kullanıcıadı.github.io/RepoAdi/
+  // Ekran görüntüsüne göre repo adınız "LinguaCard"
+  base: '/LinguaCard/',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
