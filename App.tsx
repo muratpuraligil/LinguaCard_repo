@@ -185,8 +185,32 @@ export default function App() {
           <>
             <Dashboard 
                 userEmail={session.user.email} words={words} onModeSelect={mode => {
-                    if (mode === AppMode.SENTENCES) setShowSentenceSelectModal(true);
-                    else { setStudySet([...words].sort(() => 0.5 - Math.random()).slice(0, 20)); setMode(mode); }
+                    if (mode === AppMode.SENTENCES) {
+                        setShowSentenceSelectModal(true);
+                    } else { 
+                        // Quiz Modu için özel Resume mantığı
+                        if (mode === AppMode.QUIZ) {
+                            const savedSetString = localStorage.getItem('lingua_active_set');
+                            const savedIndex = localStorage.getItem('lingua_quiz_index');
+                            // Eğer kayıtlı bir set ve bitmemiş bir index varsa onu yükle
+                            if (savedSetString && savedIndex) {
+                                setStudySet(JSON.parse(savedSetString));
+                                setMode(mode);
+                                return;
+                            }
+                        }
+
+                        // Yeni set oluştur
+                        const newSet = [...words].sort(() => 0.5 - Math.random()).slice(0, 20);
+                        setStudySet(newSet);
+                        
+                        // Seti kaydet
+                        localStorage.setItem('lingua_active_set', JSON.stringify(newSet));
+                        // Eğer Quiz ise index'i sıfırla
+                        if (mode === AppMode.QUIZ) localStorage.setItem('lingua_quiz_index', '0');
+
+                        setMode(mode); 
+                    }
                 }}
                 onAddWord={handleAddWord} onDeleteWord={id => setWordToDelete(id)} onDeleteByDate={d => setDateToDelete(d)}
                 onLogout={async () => { await supabase!.auth.signOut(); setSession(null); }}

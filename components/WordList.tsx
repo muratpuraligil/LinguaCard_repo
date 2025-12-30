@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Word } from '../types';
-import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle, Languages } from 'lucide-react';
+import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle, Languages, X } from 'lucide-react';
 
 interface WordListProps {
   words: Word[];
@@ -101,14 +101,22 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
       {/* Search and Quick Add Bar */}
       <div className="flex flex-col md:flex-row gap-4 mb-8">
         <div className="relative flex-1 group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={24} />
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors pointer-events-none" size={24} />
           <input 
             type="text" 
             placeholder="Listende hızlıca ara..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-16 pr-6 py-5 bg-zinc-900 border border-white/10 rounded-3xl focus:outline-none focus:border-blue-500/50 focus:bg-zinc-800 transition-all text-lg font-bold text-white placeholder:text-slate-500 h-full shadow-lg shadow-black/20"
+            className="w-full pl-16 pr-14 py-5 bg-zinc-900 border border-white/10 rounded-3xl focus:outline-none focus:border-blue-500/50 focus:bg-zinc-800 transition-all text-lg font-bold text-white placeholder:text-slate-500 h-full shadow-lg shadow-black/20"
           />
+          {searchTerm && (
+            <button 
+                onClick={() => setSearchTerm('')}
+                className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+            >
+                <X size={20} />
+            </button>
+          )}
         </div>
         <button 
           id="toggle-add-btn"

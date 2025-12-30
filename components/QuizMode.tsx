@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Word, LanguageDirection } from '../types';
 import { CheckCircle, ArrowLeft, Languages, Zap } from 'lucide-react';
@@ -67,6 +68,8 @@ const QuizMode: React.FC<QuizModeProps> = ({ words, allWords, onExit }) => {
     }, 1200);
   };
 
+  const progressPercent = ((currentIndex + 1) / words.length) * 100;
+
   if (finished) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 text-center font-['Plus_Jakarta_Sans']">
@@ -96,12 +99,20 @@ const QuizMode: React.FC<QuizModeProps> = ({ words, allWords, onExit }) => {
          <button onClick={onExit} className="p-4 bg-white/5 border border-white/5 rounded-2xl text-slate-400 hover:text-white transition-all">
             <ArrowLeft size={24}/>
          </button>
-         <button 
-            onClick={() => setDirection(d => d === LanguageDirection.EN_TR ? LanguageDirection.TR_EN : LanguageDirection.EN_TR)} 
-            className="bg-emerald-500/10 border border-emerald-500/20 px-6 py-3 rounded-full text-emerald-500 font-black text-[10px] tracking-widest uppercase flex items-center gap-3 hover:bg-emerald-500/20 transition-all"
-         >
-            <Languages size={16}/> {direction.replace('_', ' → ')}
-         </button>
+         
+         {/* Büyük Sayaç */}
+         <div className="flex flex-col items-center gap-2">
+            <span className="text-4xl font-black text-white tracking-tighter">
+                {currentIndex + 1} <span className="text-slate-600 text-2xl">/ {words.length}</span>
+            </span>
+            <div className="w-32 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div 
+                    className="h-full bg-emerald-500 transition-all duration-500" 
+                    style={{ width: `${progressPercent}%` }}
+                ></div>
+            </div>
+         </div>
+
          <div className="flex items-center gap-3 bg-white/5 border border-white/5 px-6 py-3 rounded-full font-black text-emerald-400">
             <Zap size={16} fill="currentColor" />
             {score}
@@ -109,6 +120,16 @@ const QuizMode: React.FC<QuizModeProps> = ({ words, allWords, onExit }) => {
       </div>
 
       <div className="flex-1 px-8 flex flex-col justify-center max-w-lg mx-auto w-full relative z-10">
+        
+        <div className="flex justify-center mb-8">
+            <button 
+                onClick={() => setDirection(d => d === LanguageDirection.EN_TR ? LanguageDirection.TR_EN : LanguageDirection.EN_TR)} 
+                className="bg-emerald-500/10 border border-emerald-500/20 px-6 py-2 rounded-full text-emerald-500 font-black text-[10px] tracking-widest uppercase flex items-center gap-3 hover:bg-emerald-500/20 transition-all"
+            >
+                <Languages size={16}/> {direction.replace('_', ' → ')}
+            </button>
+        </div>
+
         <div className="bg-zinc-900 rounded-[56px] p-12 border border-white/5 shadow-2xl mb-12 text-center relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500/30 group-hover:h-3 transition-all"></div>
             <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">
@@ -137,9 +158,7 @@ const QuizMode: React.FC<QuizModeProps> = ({ words, allWords, onExit }) => {
         </div>
       </div>
       
-      <div className="p-8 text-center text-slate-600 font-black text-[10px] tracking-widest uppercase relative z-10">
-        Kelime {currentIndex + 1} / {words.length}
-      </div>
+      <div className="pb-8"></div>
     </div>
   );
 };
