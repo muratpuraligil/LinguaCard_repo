@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { BookOpen, ArrowRight, Lock, Mail, Sparkles } from 'lucide-react';
@@ -58,7 +59,9 @@ export default function Auth() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-           redirectTo: window.location.origin 
+           // Repo adı değiştiği için dinamik href kullanıyoruz, 
+           // böylece /LinguaCard_repo/ altına doğru şekilde döner.
+           redirectTo: window.location.href 
         }
       });
       if (error) throw error;
