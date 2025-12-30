@@ -26,10 +26,30 @@ const setLocalWords = (words: Word[]) => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(words));
 };
 
-// TitleCase Helper Fonksiyonu
-const toTitleCase = (str: string): string => {
+// --- Formatlama Fonksiyonları ---
+
+// İngilizce Kelimeler İçin Formatlayıcı
+const formatEnglishWord = (str: string): string => {
   if (!str) return '';
+  
+  // 1. Adım: Türkçe klavye hatalarını düzelt (Stupıd -> Stupid)
+  let cleaned = str
+    .replace(/ı/g, 'i')  // Noktasız ı -> i
+    .replace(/İ/g, 'I'); // Büyük noktalı İ -> I
+
+  // 2. Adım: İngilizce kurallarına göre Title Case yap
+  return cleaned.split(' ')
+    .filter(w => w.length > 0)
+    .map(word => word.charAt(0).toLocaleUpperCase('en-US') + word.slice(1).toLocaleLowerCase('en-US'))
+    .join(' ');
+};
+
+// Türkçe Kelimeler İçin Formatlayıcı
+const formatTurkishWord = (str: string): string => {
+  if (!str) return '';
+  // Türkçe kurallarına göre Title Case (Ilık -> Ilık, İstanbul -> İstanbul)
   return str.split(' ')
+    .filter(w => w.length > 0)
     .map(word => word.charAt(0).toLocaleUpperCase('tr-TR') + word.slice(1).toLocaleLowerCase('tr-TR'))
     .join(' ');
 };
@@ -108,8 +128,8 @@ export const wordService = {
   async addWord(word: Omit<Word, 'id' | 'created_at'>, userId?: string): Promise<Word | null> {
     const formattedWord = {
         ...word,
-        english: toTitleCase(word.english),
-        turkish: toTitleCase(word.turkish)
+        english: formatEnglishWord(word.english),
+        turkish: formatTurkishWord(word.turkish)
     };
 
     const currentLocal = getLocalWords();
@@ -151,8 +171,8 @@ export const wordService = {
     
     const formattedWordsToAdd = wordsToAdd.map(w => ({
         ...w,
-        english: toTitleCase(w.english),
-        turkish: toTitleCase(w.turkish)
+        english: formatEnglishWord(w.english),
+        turkish: formatTurkishWord(w.turkish)
     }));
 
     const currentWords = getLocalWords();
@@ -193,8 +213,8 @@ export const wordService = {
        const payload = items
         .filter(item => !existingSetWords.has(item.english.toLowerCase().trim()))
         .map(item => ({
-            english: toTitleCase(item.english.trim()),
-            turkish: toTitleCase(item.turkish.trim()),
+            english: formatEnglishWord(item.english),
+            turkish: formatTurkishWord(item.turkish),
             example_sentence: item.example_sentence.trim(),
             turkish_sentence: item.turkish_sentence.trim(),
             user_id: userId,
