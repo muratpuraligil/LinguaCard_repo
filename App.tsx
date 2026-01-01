@@ -47,16 +47,31 @@ export default function App() {
         setLoadingSession(false);
         return;
     }
-    loadWords();
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    
+    // Auth Listener
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
-      if (session) { loadWords(); loadCustomSets(); }
+      if (session) { 
+          // Varsayılan verileri kontrol et ve yükle
+          await wordService.initializeDefaults(session.user.id);
+          // Sonra verileri çek
+          loadWords(); 
+          loadCustomSets(); 
+      }
       setLoadingSession(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
-      if (session) { loadWords(); loadCustomSets(); } 
-      else { setWords(prev => prev.filter(w => !w.user_id)); setCustomSetWords([]); }
+      if (session) { 
+          // Giriş yapıldığında da kontrol et
+          await wordService.initializeDefaults(session.user.id);
+          loadWords(); 
+          loadCustomSets(); 
+      } else { 
+          setWords(prev => prev.filter(w => !w.user_id)); 
+          setCustomSetWords([]); 
+      }
     });
     return () => subscription.unsubscribe();
   }, []);

@@ -26,6 +26,29 @@ const setLocalWords = (words: Word[]) => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(words));
 };
 
+// --- Varsayılan Veriler ---
+
+const DEFAULT_VOCAB = [
+  { english: 'Improve', turkish: 'Geliştirmek, iyileştirmek', example_sentence: 'I want to improve my English by practicing every day.', turkish_sentence: 'Her gün pratik yaparak İngilizcemi geliştirmek istiyorum.' },
+  { english: 'Decide', turkish: 'Karar vermek', example_sentence: 'She decided to study abroad next year.', turkish_sentence: 'Gelecek yıl yurt dışında okumaya karar verdi.' },
+  { english: 'Comfortable', turkish: 'Rahat, konforlu', example_sentence: 'This chair is very comfortable to sit on.', turkish_sentence: 'Bu sandalye oturmak için çok rahat.' },
+  { english: 'Enough', turkish: 'Yeterli', example_sentence: 'I don’t have enough time to finish the work today.', turkish_sentence: 'Bugün işi bitirmek için yeterli zamanım yok.' },
+  { english: 'Explain', turkish: 'Açıklamak', example_sentence: 'Can you explain this rule again, please?', turkish_sentence: 'Bu kuralı tekrar açıklar mısın lütfen?' },
+];
+
+const DEFAULT_SENTENCE_SET = [
+  { english: 'Planes', turkish: 'Uçaklar', example_sentence: 'The planes are at the airport.', turkish_sentence: 'Uçaklar havaalanında.' },
+  { english: 'Photos', turkish: 'Fotoğraflar', example_sentence: 'The photos are in the album.', turkish_sentence: 'Fotoğraflar albümde.' },
+  { english: 'Dangerous Animals', turkish: 'Tehlikeli Hayvanlar', example_sentence: 'These are dangerous animals.', turkish_sentence: 'Bunlar tehlikeli hayvanlar.' },
+  { english: 'Good Books', turkish: 'İyi Kitaplar', example_sentence: 'These are good books.', turkish_sentence: 'Bunlar iyi kitaplar.' },
+  { english: 'Trees', turkish: 'Ağaçlar', example_sentence: 'Are the trees green or gray?', turkish_sentence: 'Ağaçlar yeşil mi yoksa gri mi?' },
+  { english: 'Clouds', turkish: 'Bulutlar', example_sentence: 'Are the clouds brown or white?', turkish_sentence: 'Bulutlar kahverengi mi yoksa beyaz mı?' },
+  { english: 'Dictionary', turkish: 'Sözlük', example_sentence: 'Is this an English dictionary or a French one?', turkish_sentence: 'Bu, İngilizce mi yoksa Fransızca sözlük mü?' },
+  { english: 'Sports Car', turkish: 'Spor Araba', example_sentence: 'Is it a sports car or a classic car?', turkish_sentence: 'Bir spor araba mı yoksa klasik bir araba mı?' },
+  { english: 'Egypt', turkish: 'Mısır', example_sentence: 'Is Egypt in Europe or in Africa?', turkish_sentence: 'Mısır Avrupa’da mı yoksa Afrika’da mı?' },
+  { english: 'Butterfly', turkish: 'Kelebek', example_sentence: 'Is this a butterfly or a bee?', turkish_sentence: 'Bu, kelebek mi arı mı?' },
+];
+
 // --- Formatlama Fonksiyonları ---
 
 // İngilizce Kelimeler İçin Formatlayıcı
@@ -119,7 +142,13 @@ export const wordService = {
   async getCustomSetWords(): Promise<Word[]> {
     if (!isSupabaseConfigured || !supabase) return [];
     try {
-      const { data, error } = await supabase.from('custom_sets').select('*').order('created_at', { ascending: false });
+      // custom_sets view'ı yerine doğrudan words tablosundan set_name'i dolu olanları çekiyoruz
+      const { data, error } = await supabase
+        .from('words')
+        .select('*')
+        .not('set_name', 'is', null)
+        .order('created_at', { ascending: false });
+        
       if (error) return [];
       return data ? data.map(mapDbToApp) : [];
     } catch (e) { return []; }
@@ -207,30 +236,74 @@ export const wordService = {
   async addCustomSetItems(items: Omit<Word, 'id' | 'created_at'>[], setName: string, userId?: string): Promise<number> {
      if (!isSupabaseConfigured || !supabase || items.length === 0) return 0;
      try {
-       const { data: existingSetData } = await supabase.from('custom_sets').select('english').eq('set_name', setName);
-       const existingSetWords = new Set(existingSetData?.map((w: any) => w.english.toLowerCase().trim()) || []);
+       // Bu set ve kullanıcı için var olan kelimeleri çek (word_en sütununu kontrol et)
+       const { data: existingSetData } = await supabase
+         .from('words')
+         .select('word_en')
+         .eq('set_name', setName)
+         .eq('user_id', userId);
+
+       const existingSetWords = new Set(existingSetData?.map((w: any) => (w.word_en || '').toLowerCase().trim()) || []);
        
-       const payload = items
-        .filter(item => !existingSetWords.has(item.english.toLowerCase().trim()))
-        .map(item => ({
+       // İtemleri formatla ve set_name ekle
+       const formattedItems = items.map(item => ({
+            ...item,
             english: formatEnglishWord(item.english),
             turkish: formatTurkishWord(item.turkish),
-            example_sentence: item.example_sentence.trim(),
-            turkish_sentence: item.turkish_sentence.trim(),
-            user_id: userId,
             set_name: setName
-        }));
+       }));
 
-       if (payload.length > 0) {
-           const { error: insertError } = await supabase.from('words').insert(payload); // custom_sets yerine words veya uygun tablo
+       // Zaten var olanları filtrele (Duplicate önleme)
+       const itemsToInsert = formattedItems.filter(item => 
+           !existingSetWords.has(item.english.toLowerCase().trim())
+       );
+
+       if (itemsToInsert.length > 0) {
+           // DB formatına çevir (word_en, word_tr vb.)
+           const payload = itemsToInsert.map(item => mapAppToDb(item, userId));
+           
+           const { error: insertError } = await supabase.from('words').insert(payload); 
            if (insertError) throw insertError;
            return payload.length;
        }
        return 0;
      } catch (error: any) {
-       console.error("Custom set add error:", error.message);
+       console.error("Custom set add error:", error.message || error);
        throw error;
      }
+  },
+
+  // --- Yeni Kullanıcı Başlatma Fonksiyonu ---
+  async initializeDefaults(userId: string): Promise<void> {
+    if (!isSupabaseConfigured || !supabase) return;
+    
+    try {
+      // 1. Kullanıcının hiç kelimesi var mı kontrol et
+      const { count } = await supabase.from('words').select('*', { count: 'exact', head: true }).eq('user_id', userId);
+      
+      // Eğer hiç kelimesi yoksa, varsayılan 5 kelimeyi ekle
+      if (count === 0) {
+         console.log("Kullanıcı yeni, varsayılan kelimeler ekleniyor...");
+         await this.bulkAddWords(DEFAULT_VOCAB, userId);
+      }
+
+      // 2. "am-is-are" seti kontrolü (İyileştirilmiş)
+      // Sadece varlığına bakmak yetmez, eksikse tamamlamalı.
+      const { data: currentSetWords } = await supabase
+        .from('words')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('set_name', 'am-is-are');
+
+      // Eğer set hiç yoksa veya eksikse (örn: daha önce hatalı yüklenmişse)
+      if (!currentSetWords || currentSetWords.length < DEFAULT_SENTENCE_SET.length) {
+        console.log("Varsayılan cümle seti (am-is-are) eksik veya yok, tamamlanıyor...");
+        await this.addCustomSetItems(DEFAULT_SENTENCE_SET, 'am-is-are', userId);
+      }
+
+    } catch (e: any) {
+      console.error("Varsayılan veriler yüklenirken hata:", e.message || e);
+    }
   },
 
   async deleteWord(id: string): Promise<void> {

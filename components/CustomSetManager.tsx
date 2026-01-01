@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Word } from '../types';
-import { ArrowLeft, Plus, Play, Layers, Image, CheckCircle2, CircleDashed, RotateCcw, Trophy, Loader2, Pencil, Trash2, Info, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, Play, Layers, Image, CheckCircle2, CircleDashed, RotateCcw, Trophy, Loader2, Pencil, Trash2, Info, Calendar, Sparkles } from 'lucide-react';
 import { wordService } from '../services/supabaseClient';
 
 interface CustomSetManagerProps {
@@ -137,6 +137,8 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
   };
 
   const SetCard: React.FC<{ set: SetInfo }> = ({ set }) => {
+    const isSampleSet = set.name === 'am-is-are';
+
     let statusConfig = {
         color: "text-slate-400",
         bgColor: "bg-zinc-800",
@@ -170,26 +172,38 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
     }
 
     return (
-        <div className={`bg-zinc-900 border border-white/5 rounded-[32px] p-6 flex flex-col justify-between group transition-all relative overflow-hidden h-[340px] hover:bg-zinc-800 hover:border-white/10 shadow-xl`}>
+        <div className={`bg-zinc-900 border border-white/5 rounded-[32px] p-6 flex flex-col justify-between group transition-all relative overflow-hidden h-[340px] hover:bg-zinc-800 hover:border-white/10 shadow-xl ${isSampleSet ? 'ring-2 ring-yellow-500/20' : ''}`}>
+            
+            {isSampleSet && (
+                <div className="absolute top-4 right-4 z-10 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-[10px] font-black px-2 py-1 rounded-md flex items-center gap-1 shadow-lg backdrop-blur-sm">
+                    <Sparkles size={10} fill="currentColor" />
+                    <span>ÖRNEK SET</span>
+                </div>
+            )}
+
             <div className="flex justify-between items-start mb-4">
                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${statusConfig.bgColor} ${statusConfig.color} border ${statusConfig.borderColor}`}>
                     {statusConfig.icon}
                     <span>{statusConfig.label}</span>
                 </div>
-                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); setEditingSet({oldName: set.name, newName: set.name}); }}
-                        className="p-2 bg-white/5 text-slate-400 hover:text-blue-400 rounded-xl transition-all"
-                    >
-                        <Pencil size={16} />
-                    </button>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); setSetToDelete(set.name); }}
-                        className="p-2 bg-white/5 text-slate-400 hover:text-red-400 rounded-xl transition-all"
-                    >
-                        <Trash2 size={16} />
-                    </button>
-                </div>
+                
+                {/* Örnek set için silme/düzenleme butonlarını gizle veya sadece silmeyi engelle */}
+                {!isSampleSet && (
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setEditingSet({oldName: set.name, newName: set.name}); }}
+                            className="p-2 bg-white/5 text-slate-400 hover:text-blue-400 rounded-xl transition-all"
+                        >
+                            <Pencil size={16} />
+                        </button>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setSetToDelete(set.name); }}
+                            className="p-2 bg-white/5 text-slate-400 hover:text-red-400 rounded-xl transition-all"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    </div>
+                )}
             </div>
             <div className="mb-4 flex-1">
                 <h3 className="text-xl font-black text-white mb-1 leading-tight group-hover:text-blue-400 transition-colors tracking-tight line-clamp-2">
