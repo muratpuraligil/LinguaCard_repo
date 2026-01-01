@@ -105,14 +105,19 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
               localStorage.removeItem(oldStorageKey);
           }
           
-          setEditingSet(null);
-          // 4. Verileri Supabase'den tekrar tazeleyerek her şeyin doğru olduğundan emin olalım
-          await onRefresh();
+          // KİLİT NOKTA: Modal'ı hemen kapat, onRefresh arkada çalışsın.
+          // Bu, arayüzün "Kaydediliyor..." durumunda takılı kalmasını engeller.
+          setEditingSet(null); 
+          
+          // 4. Verileri Supabase'den tazeleyelim (await etmeye gerek yok, UI zaten güncellendi)
+          onRefresh();
       } catch (err) {
           console.error("Rename failed", err);
           alert("Set ismi güncellenirken bir hata oluştu.");
       } finally {
-          setIsProcessing(false);
+          // Eğer hata olursa ve modal kapanmamışsa loading'i durdur.
+          // Başarılı durumda modal kapandığı için bu etki etmez.
+          if (editingSet) setIsProcessing(false);
       }
   };
 
@@ -268,11 +273,10 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
                                     <Plus size={32} strokeWidth={4} />
                                 </div>
                                 <h3 className="text-2xl font-black text-white mb-1">Yeni Set</h3>
-                                <p className="text-blue-100 text-xs font-bold mb-8 opacity-70">Görselden cümle seti üret</p>
+                                <p className="text-blue-100 text-xs font-bold mb-8 opacity-70">Cümleleri resim ile aktar.</p>
                                 <button onClick={() => setShowInput(true)} className="w-full py-4 bg-white text-blue-900 rounded-xl font-black hover:bg-blue-50 transition-all text-sm mb-4">Başla</button>
-                                <div className="flex items-center gap-2 text-blue-200/60 text-[10px] font-bold">
-                                    <Info size={12} />
-                                    <span>Cümlelerden oluşan resimler ile çalışma setleri oluşturur.</span>
+                                <div className="text-blue-200/60 text-xs font-bold text-center mt-2">
+                                    <span>Cümlelerden oluşan resimler ile çalışma setleri oluştur.</span>
                                 </div>
                             </div>
                         ) : (
@@ -297,18 +301,22 @@ const CustomSetManager: React.FC<CustomSetManagerProps> = ({ words, onExit, onPl
             </div>
         </div>
 
-        {completedSets.length > 0 && (
-            <div className="mb-20">
-                <h2 className="text-xs font-black text-emerald-500 uppercase tracking-[0.3em] mb-8 flex items-center gap-4">
-                    Tamamlanan Çalışmalar
-                    <Trophy size={14} />
-                    <div className="h-px bg-emerald-500/20 flex-1"></div>
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 opacity-80 hover:opacity-100 transition-opacity">
-                    {completedSets.map(set => <SetCard key={set.name} set={set} />)}
-                </div>
+        <div className="mb-20">
+            <h2 className="text-xs font-black text-emerald-500 uppercase tracking-[0.3em] mb-8 flex items-center gap-4">
+                Tamamlanan Çalışmalar
+                <Trophy size={14} />
+                <div className="h-px bg-emerald-500/20 flex-1"></div>
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 opacity-80 hover:opacity-100 transition-opacity">
+                {completedSets.length > 0 ? (
+                    completedSets.map(set => <SetCard key={set.name} set={set} />)
+                ) : (
+                    <div className="col-span-full text-center py-10 border border-dashed border-white/10 rounded-3xl bg-zinc-900/50 text-slate-500 font-bold text-sm">
+                        Henüz tamamlanan bir set bulunmuyor.
+                    </div>
+                )}
             </div>
-        )}
+        </div>
 
         {editingSet && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[10002] flex items-center justify-center p-4">

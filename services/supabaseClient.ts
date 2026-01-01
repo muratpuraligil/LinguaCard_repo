@@ -305,6 +305,7 @@ export const wordService = {
 
   async renameCustomSet(oldName: string, newName: string): Promise<void> {
       if (!isSupabaseConfigured || !supabase) return;
-      await supabase.from('words').update({ set_name: newName }).eq('set_name', oldName);
+      const { error } = await supabase.from('words').update({ set_name: newName }).eq('set_name', oldName);
+      if (error) throw error;
   }
 };

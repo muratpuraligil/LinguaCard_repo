@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Word, LanguageDirection } from '../types';
-import { ArrowLeft, Volume2, CheckCircle2, XCircle, Eraser, Languages, Eye, Trophy, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Volume2, CheckCircle2, XCircle, Eraser, Languages, Eye, Trophy, RotateCcw, HelpCircle, Info } from 'lucide-react';
 import { wordService, supabase } from '../services/supabaseClient';
 import confetti from 'canvas-confetti';
 
@@ -76,13 +77,10 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
     frame();
   };
 
-  // Tamamlanma Kontrolü
-  // Fix: Explicitly type 'p' as 'any' to avoid "Property 'status' does not exist on type 'unknown'" error.
   const completedCount = Object.values(progress).filter((p: any) => p?.status === 'CORRECT').length;
   const progressPercentage = Math.round((completedCount / words.length) * 100);
 
   useEffect(() => {
-      // Tüm kelimeler tamamlandıysa ve modal henüz açık değilse
       if (words.length > 0 && completedCount === words.length) {
           if (!showFinishedModal) {
               setShowFinishedModal(true);
@@ -91,11 +89,35 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
       }
   }, [completedCount, words.length, showFinishedModal]);
 
-  const handleInputChange = (id: string, value: string) => {
+  // Normalizasyon Fonksiyonu: Noktalama ve harf duyarlılığını kaldırır
+  const normalize = (str: string) => str.toLowerCase().replace(/[.,!?;:"'’`]/g, '').trim();
+
+  const handleInputChange = (id: string, value: string, targetText: string, currentIndex: number) => {
+    // 1. Durumu güncelle
+    const isMatch = normalize(value) === normalize(targetText);
+    
     setProgress(prev => ({
         ...prev,
-        [id]: { ...prev[id], input: value, status: 'IDLE' }
+        [id]: { 
+            ...prev[id], 
+            input: value, 
+            status: isMatch ? 'CORRECT' : 'IDLE' // Eşleşirse direkt CORRECT yap
+        }
     }));
+
+    // 2. Eğer doğruysa otomatik işlemler
+    if (isMatch) {
+        speak(targetText);
+        
+        // Bir sonraki inputa odaklan
+        setTimeout(() => {
+            const nextInputId = `study-input-${currentIndex + 1}`;
+            const nextElement = document.getElementById(nextInputId);
+            if (nextElement) {
+                nextElement.focus();
+            }
+        }, 100); // UI render süresi için minik gecikme
+    }
   };
 
   const clearLine = (id: string) => {
@@ -107,7 +129,6 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
 
   const checkAnswer = (id: string, targetText: string) => {
     const currentInput = progress[id]?.input || '';
-    const normalize = (str: string) => str.toLowerCase().replace(/[.,!?;:"]/g, '').trim();
     const isCorrect = normalize(currentInput) === normalize(targetText);
 
     setProgress(prev => ({
@@ -147,16 +168,18 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
     window.speechSynthesis.speak(u);
   };
 
-  // Manuel Sıfırlama (Buton için - Onay ister)
   const handleManualReset = () => {
       if (confirm('Bu set için tüm ilerlemen silinecek. Emin misin?')) {
           performReset();
       }
   };
 
-  // Otomatik Sıfırlama (Modal için - Onay istemez)
+  // Tamamlanan ekrandan "Sıfırla ve Tekrar Et" butonuna basınca çalışır.
+  // Kullanıcıyı uyarır, veriyi siler ve önceki ekrana atar.
   const handleRestart = () => {
-      performReset();
+      localStorage.removeItem(storageKey);
+      alert("Set sıfırlandı ve 'Devam Eden Çalışmalar' alanına taşındı.");
+      onExit();
   };
 
   const performReset = () => {
@@ -164,13 +187,9 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
       words.forEach(w => {
           resetState[w.id] = { input: '', status: 'IDLE' };
       });
-      // State'i güncelle
       setProgress(resetState);
-      // LocalStorage'ı temizle
       localStorage.removeItem(storageKey);
-      // Modalı kapat
       setShowFinishedModal(false);
-      // En yukarı kaydır
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -246,7 +265,6 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
       );
   }
 
-  // Genişlik Ayarı: max-w-6xl ile sınırlandı, yatay scroll kaldırıldı
   const containerClass = "w-full max-w-6xl px-4 md:px-8 mx-auto flex flex-col items-center";
   
   return (
@@ -285,7 +303,6 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
             </div>
           </div>
           
-          {/* Progress Bar */}
           <div className="w-full max-w-6xl mx-auto mt-6 h-1 bg-zinc-800 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-blue-500 transition-all duration-1000 ease-out shadow-[0_0_10px_#3b82f6]" 
@@ -297,6 +314,15 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
       {/* List Content */}
       <div className="flex-1 p-4 md:p-8">
           <div className={containerClass}>
+            
+            {/* Info Box */}
+            <div className="w-full bg-blue-900/20 border border-blue-500/30 p-4 rounded-2xl mb-8 flex items-start gap-3">
+                <Info className="text-blue-400 flex-shrink-0 mt-0.5" size={20} />
+                <p className="text-sm font-medium text-blue-200">
+                    Çeviri girişi doğru sağlanırsa bir sonraki cümleye geçiş otomatik gerçekleşir.
+                </p>
+            </div>
+
             <div className="w-full space-y-4">
               {words.map((word, index) => {
                   const state = progress[word.id] || { input: '', status: 'IDLE' };
@@ -321,7 +347,7 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
                             ${isCorrect ? 'border-emerald-500/30 bg-emerald-900/10' : isWrong ? 'border-red-500/30' : 'border-zinc-800 focus-within:border-blue-500/50'}
                         `}
                       >
-                          {/* Sol: Prompt (Soru) - Soru etiketi kaldırıldı, numara eklendi */}
+                          {/* Sol: Prompt (Soru) */}
                           <div 
                             className="flex-1 p-5 md:p-6 border-b md:border-b-0 md:border-r border-white/5 bg-white/5 md:bg-transparent cursor-pointer hover:bg-white/5 transition-colors flex items-center"
                             onDoubleClick={handlePromptDoubleClick}
@@ -340,20 +366,34 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
                               <div className="w-full flex items-center gap-3">
                                   <div className="relative flex-1">
                                       <input 
+                                        id={`study-input-${index}`}
                                         type="text"
                                         value={state.input}
-                                        onChange={(e) => handleInputChange(word.id, e.target.value)}
+                                        onChange={(e) => handleInputChange(word.id, e.target.value, targetText, index)}
                                         onKeyDown={(e) => handleKeyDown(e, word.id, targetText)}
                                         onDoubleClick={handleInputDoubleClick}
                                         placeholder={direction === LanguageDirection.TR_EN ? "İngilizce çevirisi..." : "Türkçe çevirisi..."}
                                         disabled={isCorrect} 
-                                        className={`w-full bg-zinc-800 border border-white/10 rounded-xl px-4 py-4 text-base md:text-lg font-bold outline-none transition-all placeholder:text-zinc-600 shadow-inner
+                                        className={`w-full bg-zinc-800 border border-white/10 rounded-xl pl-4 pr-12 py-4 text-base md:text-lg font-bold outline-none transition-all placeholder:text-zinc-600 shadow-inner
                                             ${isCorrect ? 'text-emerald-400 bg-emerald-900/20 border-emerald-500/20' : 'text-white focus:border-blue-500 focus:bg-zinc-700'}
                                             ${isWrong ? 'text-red-400 border-red-500/50' : ''}
                                         `}
                                       />
-                                      {/* Buton Grubu */}
-                                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                      {/* Buton Grubu - Inputun İçinde */}
+                                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                           
+                                           {/* Soru İşareti Butonu (Enter görevi) - Sadece doğru değilse VE giriş yapılmışsa göster */}
+                                           {!isCorrect && state.input.trim().length > 0 && (
+                                              <button
+                                                  onClick={() => checkAnswer(word.id, targetText)}
+                                                  className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                                                  title="Kontrol Et (Enter)"
+                                                  tabIndex={-1}
+                                              >
+                                                  <HelpCircle size={18} />
+                                              </button>
+                                           )}
+
                                            {isWrong && !isCorrect && (
                                                 <button 
                                                     onClick={() => revealAnswerInInput(word.id, targetText)}
@@ -370,11 +410,11 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
                                           {isWrong && (
                                             <button 
                                                 onClick={() => clearLine(word.id)}
-                                                className="text-red-500 hover:scale-110 transition-transform hover:text-red-400"
+                                                className="text-red-500 hover:scale-110 transition-transform hover:text-red-400 p-1"
                                                 title="Temizle"
                                                 tabIndex={-1}
                                             >
-                                                <XCircle size={20} />
+                                                <XCircle size={18} />
                                             </button>
                                           )}
                                       </div>
