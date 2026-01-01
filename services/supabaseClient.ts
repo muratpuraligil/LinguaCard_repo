@@ -93,6 +93,10 @@ export const wordService = {
     return getLocalWords();
   },
 
+  clearCache() {
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+  },
+
   // --- SENKRONİZASYON FONKSİYONU ---
   // Yerelde olup sunucuda olmayan kelimeleri bulur ve sunucuya gönderir.
   async syncLocalToRemote(userId: string): Promise<number> {
@@ -112,11 +116,15 @@ export const wordService = {
 
         const remoteSet = new Set(remoteData?.map(w => (w.word_en || '').toLowerCase().trim()) || []);
 
-        // 2. Yerelde olup sunucuda olmayanları filtrele (user_id kontrolü yapma, çünkü yerelde user_id eksik olabilir)
+        // 2. Yereldeki kelimeleri filtrele
+        // Sadece user_id'si OLMAYAN (anonim eklenmiş) veya user_id'si şimdiki kullanıcıyla EŞLEŞEN kelimeleri al.
+        // Başka bir kullanıcının ID'sine sahip kelimeler senkronize edilmemeli.
         const missingWords = localWords.filter(localWord => {
             const cleanEng = localWord.english.toLowerCase().trim();
-            // Sunucuda yoksa EKLE
-            return !remoteSet.has(cleanEng);
+            const belongsToCurrentUserOrAnon = !localWord.user_id || localWord.user_id === userId;
+            
+            // Sunucuda yoksa VE (anonimse VEYA bu kullanıcıya aitse) EKLE
+            return belongsToCurrentUserOrAnon && !remoteSet.has(cleanEng);
         });
 
         if (missingWords.length === 0) return 0;
@@ -141,16 +149,23 @@ export const wordService = {
     }
   },
 
-  async getAllWords(): Promise<Word[]> {
+  async getAllWords(userId?: string): Promise<Word[]> {
     const local = getLocalWords();
     let remoteWords: Word[] = [];
     
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('words')
           .select('*')
           .order('created_at', { ascending: false });
+        
+        // Eğer userId varsa, SADECE o kullanıcının verilerini çek
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+
+        const { data, error } = await query;
         if (!error && data) remoteWords = data.map(mapDbToApp);
       } catch (e) {
         console.error("Supabase fetch error:", e);
@@ -158,9 +173,20 @@ export const wordService = {
     }
     
     const wordMap = new Map<string, Word>();
+    
+    // Önce sunucudan gelenleri ekle (en güncel doğruluk kaynağı)
     remoteWords.forEach(w => wordMap.set(w.english.toLowerCase().trim(), w));
+    
+    // Sonra yereldekileri ekle (çevrimdışı eklenenler için)
+    // ANCAK: Eğer userId belliyse, yereldeki "başka kullanıcıya ait" kelimeleri ASLA listeye alma.
     local.forEach(w => {
         const key = w.english.toLowerCase().trim();
+        
+        // Eğer kelimenin bir sahibi varsa ve bu sahip şu anki kullanıcı değilse, bu kelimeyi görmezden gel.
+        if (userId && w.user_id && w.user_id !== userId) {
+            return;
+        }
+
         if (!wordMap.has(key)) {
             wordMap.set(key, w);
         }
@@ -170,19 +196,27 @@ export const wordService = {
       new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     );
 
+    // Temizlenmiş ve birleştirilmiş listeyi yerel depolamaya yaz
+    // Bu sayede çıkış yapan kullanıcının verileri, bir sonraki giriş yapanın cache'inden temizlenmiş olur.
     setLocalWords(finalWords);
     return finalWords;
   },
 
-  async getCustomSetWords(): Promise<Word[]> {
+  async getCustomSetWords(userId?: string): Promise<Word[]> {
     if (!isSupabaseConfigured || !supabase) return [];
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('words')
         .select('*')
         .not('set_name', 'is', null)
         .order('created_at', { ascending: false });
+
+      // UserId varsa filtrele
+      if (userId) {
+          query = query.eq('user_id', userId);
+      }
         
+      const { data, error } = await query;
       if (error) return [];
       return data ? data.map(mapDbToApp) : [];
     } catch (e) { return []; }
@@ -273,7 +307,7 @@ export const wordService = {
          .from('words')
          .select('word_en') 
          .eq('set_name', setName)
-         .eq('user_id', userId);
+         .eq('user_id', userId); // UserId kontrolü eklendi
 
        const existingSetWords = new Set(existingSetData?.map((w: any) => (w.word_en || '').toLowerCase().trim()) || []);
        

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Word } from '../types';
-import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle, Languages, X } from 'lucide-react';
+import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle, Languages, X, Layers } from 'lucide-react';
 
 interface WordListProps {
   words: Word[];
@@ -183,8 +183,17 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
 
             return (
               <div key={word.id} className="bg-zinc-900 p-8 rounded-[40px] border-b-4 border-slate-700 hover:border-slate-500 transition-all group relative overflow-hidden flex flex-col h-full items-start text-left">
+                
+                {/* Set Badge (Varsa) */}
+                {word.set_name && (
+                    <div className="absolute top-0 right-0 bg-blue-500/20 text-blue-400 text-[10px] font-black uppercase px-4 py-2 rounded-bl-2xl border-l border-b border-blue-500/20 flex items-center gap-1.5 backdrop-blur-sm z-10">
+                        <Layers size={12} />
+                        {word.set_name}
+                    </div>
+                )}
+
                 {/* Header: English + Speaker */}
-                <div className="flex justify-between items-start w-full mb-3">
+                <div className="flex justify-between items-start w-full mb-3 mt-2">
                     <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition-colors leading-tight">{word.english}</h3>
                     <button onClick={() => speak(word.english)} className="text-slate-600 hover:text-blue-400 p-2 rounded-xl bg-white/5 transition-all flex-shrink-0 ml-2">
                         <Volume2 size={20} />
@@ -265,7 +274,7 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
               <div className="flex flex-col md:flex-row gap-4">
                   <button 
                     onClick={onOpenUpload}
-                    className="flex items-center gap-3 bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-2xl font-black transition-all active:scale-95 shadow-lg shadow-blue-900/20"
+                    className="flex items-center gap-3 bg-blue-600 hover:bg-blue-50 text-white px-8 py-4 rounded-2xl font-black transition-all active:scale-95 shadow-lg shadow-blue-900/20"
                   >
                       <Image size={20} />
                       Resim ile Yükle

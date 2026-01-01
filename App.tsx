@@ -65,8 +65,8 @@ export default function App() {
                 // 3. Ardından güncel verileri çek ve varsayılanları kontrol et
                 await Promise.allSettled([
                     wordService.initializeDefaults(session.user.id),
-                    loadWords(),
-                    loadCustomSets()
+                    loadWords(session.user.id),
+                    loadCustomSets(session.user.id)
                 ]);
             }
         } catch (error) {
@@ -89,24 +89,25 @@ export default function App() {
           // Giriş anında da senkronizasyon dene
           wordService.syncLocalToRemote(session.user.id)
             .then(() => wordService.initializeDefaults(session.user.id))
-            .then(() => { loadWords(); loadCustomSets(); })
+            .then(() => { loadWords(session.user.id); loadCustomSets(session.user.id); })
             .catch(console.error);
       } else { 
-          setWords(prev => prev.filter(w => !w.user_id)); 
+          setWords([]); 
           setCustomSetWords([]); 
+          wordService.clearCache(); // Oturum kapandığında cache'i temizle
       }
     }) || { data: { subscription: { unsubscribe: () => {} } } };
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const loadWords = async () => {
-    const data = await wordService.getAllWords();
+  const loadWords = async (userId?: string) => {
+    const data = await wordService.getAllWords(userId);
     setWords(data);
   };
 
-  const loadCustomSets = async () => {
-      const data = await wordService.getCustomSetWords();
+  const loadCustomSets = async (userId?: string) => {
+      const data = await wordService.getCustomSetWords(userId);
       setCustomSetWords(data);
   };
 
@@ -151,11 +152,11 @@ export default function App() {
         if (extracted && extracted.length > 0) {
           if (activeSetName) {
              const added = await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
-             await loadCustomSets();
+             await loadCustomSets(session?.user?.id);
              showToast(`${added} yeni cümle seti eklendi!`);
           } else {
              const addedCount = await wordService.bulkAddWords(extracted, session?.user?.id);
-             await loadWords();
+             await loadWords(session?.user?.id);
              showToast(`${addedCount} yeni kelime eklendi!`);
           }
           setShowUploadModal(false);
@@ -214,7 +215,7 @@ export default function App() {
                 words={customSetWords} 
                 onExit={() => setMode(AppMode.HOME)} 
                 onUploadNewSet={set => { setActiveSetName(set); setShowUploadModal(true); }}
-                onRefresh={loadCustomSets}
+                onRefresh={async () => { await loadCustomSets(session?.user?.id); }}
                 onRenameCustomSetLocally={(old, name) => setCustomSetWords(prev => prev.map(w => w.set_name === old ? {...w, set_name: name} : w))}
                 onPlaySet={set => { setStudySet(set); setMode(AppMode.CUSTOM_SET_STUDY); }}
             />
@@ -252,7 +253,12 @@ export default function App() {
                     }
                 }}
                 onAddWord={handleAddWord} onDeleteWord={id => setWordToDelete(id)} onDeleteByDate={d => setDateToDelete(d)}
-                onLogout={async () => { await supabase!.auth.signOut(); setSession(null); }}
+                onLogout={async () => { 
+                    await supabase!.auth.signOut(); 
+                    setSession(null); 
+                    wordService.clearCache(); // Logout olunca cache temizle
+                    setWords([]);
+                }}
                 onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
                 onQuickAdd={() => {
                     const btn = document.getElementById('force-open-add-word');

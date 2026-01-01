@@ -22,7 +22,7 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
   
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash', // Daha kararlı sürüm kullanıldı
       contents: {
         parts: [
           {
@@ -32,23 +32,30 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
             },
           },
           {
-            text: `Analyze the text in this image for vocabulary learning. Follow these TWO strict rules for extraction:
+            text: `Analyze the text in this image. Your GOAL is to extract ALL vocabulary items or sentences found.
+            
+            Strictly follow these extraction rules:
 
-            1. **Explicit Lists & Matches:** Extract all English words that are presented with their Turkish meanings (e.g. lists, matching exercises like "Lazy -> Tembel", "Smart -> Zeki").
+            1. **NUMBERED LISTS & SENTENCES (CRITICAL):** 
+               - If the image contains a numbered list of sentences (e.g., 1 to 30), you MUST extract EVERY SINGLE LINE. 
+               - **DO NOT** summarize, **DO NOT** pick a sample. Extract ALL items found.
+               - **REMOVE NUMBERS:** You MUST remove the leading numbering (e.g., "1.", "2)", "19-") and any immediate whitespace from the start of the sentence.
+               - Example: If the image shows "19. Bugün hava güzel.", extract ONLY "Bugün hava güzel." (without the "19.").
+               - Use the CLEANED sentence (without number) as both the 'english' word and the 'example_sentence'.
 
-            2. **Highlighted/Marked Words in Sentences:**
-               - Scan sentences for specific words that are **visually highlighted** (e.g. has a colored background like pink/red, underlined, or different text color) while the rest of the sentence is standard text.
-               - Extract **ONLY** the highlighted word as the vocabulary item.
-               - **Example:** In the sentence "Sorry, I'm a bit late", if the word "bit" has a pink background or is colored differently, extract ONLY "bit".
-               - Do NOT extract random words from sentences unless they are visually distinguished/marked.
+            2. **Vocabulary Lists:**
+               - Extract matching pairs (e.g., "Word -> Meaning").
+
+            3. **Highlighted Words:**
+               - If a specific word is highlighted in a sentence, extract that word as 'english' and the full sentence as 'example_sentence'.
 
             For each extracted item, return a JSON object with:
-            - 'english': The extracted word.
-            - 'turkish': The Turkish meaning (if visible in the image, otherwise translate the word).
-            - 'example_sentence': The full sentence where the word was found (or generate a simple one).
+            - 'english': The word OR the full sentence found in the image (CLEANED of numbers).
+            - 'turkish': The Turkish translation found in the image (or translate it if missing).
+            - 'example_sentence': The full sentence containing the word (if it's a sentence list, repeat the 'english' field here).
             - 'turkish_sentence': Turkish translation of the example sentence.
             
-            Return ONLY the JSON array.`,
+            Return ONLY the JSON array. Ensure the array contains ALL items found in the image.`,
           },
         ],
       },
