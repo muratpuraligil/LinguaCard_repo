@@ -235,7 +235,7 @@ export default function App() {
                     if (btn) btn.click();
                 }}
             />
-            {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} />}
+            
             {showSentenceSelectModal && (
                 <SentenceModeSelectionModal 
                     onClose={() => setShowSentenceSelectModal(false)} 
@@ -279,6 +279,9 @@ export default function App() {
             )}
           </>
         )}
+
+        {/* Upload Modal artık her modda çalışması için ana kapsayıcıya taşındı */}
+        {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} />}
     </div>
   );
 }
