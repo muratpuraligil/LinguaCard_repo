@@ -54,7 +54,6 @@ const DEFAULT_SENTENCE_SET = [
 const formatEnglishWord = (str: string): string => {
   if (!str) return '';
   let cleaned = str.replace(/ı/g, 'i').replace(/İ/g, 'I');
-  // Cümle ise sadece ilk harfi büyüt, değilse Title Case
   if (cleaned.includes(' ')) {
       return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
   }
@@ -69,7 +68,6 @@ const formatTurkishWord = (str: string): string => {
   return str.charAt(0).toLocaleUpperCase('tr-TR') + str.slice(1).toLocaleLowerCase('tr-TR');
 };
 
-// DB'den gelen veriyi Frontend tipine çevirir.
 const mapDbToApp = (dbRecord: any): Word => ({
   id: dbRecord.id,
   english: dbRecord.word_en || dbRecord.english || '',
@@ -81,7 +79,6 @@ const mapDbToApp = (dbRecord: any): Word => ({
   set_name: dbRecord.set_name || undefined
 });
 
-// Frontend verisini DB tipine çevirir (Insert için)
 const mapAppToDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string) => ({
   word_en: word.english.trim(),
   word_tr: word.turkish.trim(),
@@ -223,7 +220,7 @@ export const wordService = {
   async addCustomSetItems(items: Omit<Word, 'id' | 'created_at'>[], setName: string, userId?: string): Promise<number> {
      if (!isSupabaseConfigured || !supabase || items.length === 0) return 0;
      try {
-       // DÜZELTME: Sadece 'word_en' sorguluyoruz, 'english' artık yok.
+       // Sadece 'word_en' ve 'set_name' ile kontrol et
        const { data: existingSetData } = await supabase
          .from('words')
          .select('word_en') 
@@ -257,28 +254,35 @@ export const wordService = {
      }
   },
 
-  // --- Yeni Kullanıcı Başlatma Fonksiyonu ---
+  // --- Yeni Kullanıcı Başlatma Fonksiyonu (Güçlendirilmiş) ---
   async initializeDefaults(userId: string): Promise<void> {
     if (!isSupabaseConfigured || !supabase) return;
     
     try {
-      const { count } = await supabase.from('words').select('*', { count: 'exact', head: true }).eq('user_id', userId);
-      
-      if (count === 0) {
-         console.log("Kullanıcı yeni, varsayılan kelimeler ekleniyor...");
-         await this.bulkAddWords(DEFAULT_VOCAB, userId);
-      }
-
-      // am-is-are seti kontrolü
-      const { data: currentSetWords } = await supabase
+      // 1. Önce am-is-are setini kontrol et
+      const { data: currentSetWords, error: setError } = await supabase
         .from('words')
         .select('id')
         .eq('user_id', userId)
         .eq('set_name', 'am-is-are');
 
+      if (setError) {
+          console.error("Set kontrol hatası:", setError);
+      }
+
+      // Eğer set yoksa veya eksikse EKLE
       if (!currentSetWords || currentSetWords.length < DEFAULT_SENTENCE_SET.length) {
-        console.log("Varsayılan cümle seti (am-is-are) eksik veya yok, tamamlanıyor...", DEFAULT_SENTENCE_SET);
+        console.log("Varsayılan cümle seti eksik, ekleniyor...");
         await this.addCustomSetItems(DEFAULT_SENTENCE_SET, 'am-is-are', userId);
+      } else {
+        console.log("am-is-are seti hazır.");
+      }
+
+      // 2. Varsayılan kelimeleri kontrol et
+      const { count } = await supabase.from('words').select('*', { count: 'exact', head: true }).eq('user_id', userId);
+      if (count === 0) {
+         console.log("Kullanıcı yeni, varsayılan kelimeler ekleniyor...");
+         await this.bulkAddWords(DEFAULT_VOCAB, userId);
       }
 
     } catch (e: any) {
