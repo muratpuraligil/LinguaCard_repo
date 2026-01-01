@@ -93,6 +93,54 @@ export const wordService = {
     return getLocalWords();
   },
 
+  // --- SENKRONİZASYON FONKSİYONU ---
+  // Yerelde olup sunucuda olmayan kelimeleri bulur ve sunucuya gönderir.
+  async syncLocalToRemote(userId: string): Promise<number> {
+    if (!isSupabaseConfigured || !supabase) return 0;
+
+    try {
+        const localWords = getLocalWords();
+        if (localWords.length === 0) return 0;
+
+        // 1. Sunucudaki mevcut kelimeleri (sadece ingilizce kısmını) çek
+        const { data: remoteData, error } = await supabase
+            .from('words')
+            .select('word_en')
+            .eq('user_id', userId);
+        
+        if (error) throw error;
+
+        const remoteSet = new Set(remoteData?.map(w => (w.word_en || '').toLowerCase().trim()) || []);
+
+        // 2. Yerelde olup sunucuda olmayanları filtrele (user_id kontrolü yapma, çünkü yerelde user_id eksik olabilir)
+        const missingWords = localWords.filter(localWord => {
+            const cleanEng = localWord.english.toLowerCase().trim();
+            // Sunucuda yoksa EKLE
+            return !remoteSet.has(cleanEng);
+        });
+
+        if (missingWords.length === 0) return 0;
+
+        console.log(`${missingWords.length} adet senkronize edilmemiş kelime bulundu, yükleniyor...`);
+
+        // 3. Eksik kelimeleri sunucu formatına çevir ve gönder
+        const payload = missingWords.map(w => mapAppToDb(w, userId));
+        
+        // Parça parça gönder (batching) - Supabase limitlerine takılmamak için
+        const { error: insertError } = await supabase.from('words').insert(payload);
+        
+        if (insertError) {
+            console.error("Senkronizasyon hatası:", insertError);
+            throw insertError;
+        }
+
+        return missingWords.length;
+    } catch (e) {
+        console.error("Sync işlemi sırasında hata:", e);
+        return 0;
+    }
+  },
+
   async getAllWords(): Promise<Word[]> {
     const local = getLocalWords();
     let remoteWords: Word[] = [];

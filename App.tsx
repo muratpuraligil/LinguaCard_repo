@@ -59,8 +59,10 @@ export default function App() {
             setSession(session);
 
             if (session) { 
-                // 2. Varsayılan verileri ve kelimeleri yüklemeyi dene
-                // Hata olsa bile catch bloğu yakalayacak, uygulama çökmez.
+                // 2. ÖNCE Yerel verileri sunucuya senkronize et (Eksik verileri tamamla)
+                await wordService.syncLocalToRemote(session.user.id);
+
+                // 3. Ardından güncel verileri çek ve varsayılanları kontrol et
                 await Promise.allSettled([
                     wordService.initializeDefaults(session.user.id),
                     loadWords(),
@@ -71,7 +73,7 @@ export default function App() {
             console.error("Uygulama başlatma hatası:", error);
             // Hata olsa bile kullanıcıya bir şey göstermek için devam ediyoruz.
         } finally {
-            // 3. Her durumda (başarılı veya hatalı) yükleme ekranını kapat
+            // 4. Her durumda (başarılı veya hatalı) yükleme ekranını kapat
             setLoadingSession(false);
         }
     };
@@ -84,9 +86,11 @@ export default function App() {
       setSession(session);
       if (session) { 
           // Giriş yapıldığında verileri tazele (arkaplanda)
-          wordService.initializeDefaults(session.user.id).catch(console.error);
-          loadWords(); 
-          loadCustomSets(); 
+          // Giriş anında da senkronizasyon dene
+          wordService.syncLocalToRemote(session.user.id)
+            .then(() => wordService.initializeDefaults(session.user.id))
+            .then(() => { loadWords(); loadCustomSets(); })
+            .catch(console.error);
       } else { 
           setWords(prev => prev.filter(w => !w.user_id)); 
           setCustomSetWords([]); 
