@@ -56,12 +56,16 @@ export default function Auth() {
   const handleGoogleLogin = async () => {
     if (!supabase) return;
     try {
+      const redirectUrl = window.location.origin + window.location.pathname;
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-           // Repo adı değiştiği için dinamik href kullanıyoruz, 
-           // böylece /LinguaCard_repo/ altına doğru şekilde döner.
-           redirectTo: window.location.href 
+           redirectTo: redirectUrl,
+           queryParams: {
+             access_type: 'offline',
+             prompt: 'consent',
+           },
         }
       });
       if (error) throw error;
@@ -100,7 +104,10 @@ export default function Auth() {
           <div className="relative group">
             <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={20} />
             <input
+              id="email"
+              name="email"
               type="email"
+              autoComplete="username"
               placeholder="E-posta adresi"
               className="w-full pl-16 pr-6 py-5 bg-zinc-900 border border-white/5 rounded-2xl focus:outline-none focus:border-blue-500/50 transition-all text-white font-bold placeholder:text-slate-600"
               value={email}
@@ -112,7 +119,10 @@ export default function Auth() {
           <div className="relative group">
             <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={20} />
             <input
+              id="password"
+              name="password"
               type="password"
+              autoComplete="current-password"
               placeholder="Şifre"
               className="w-full pl-16 pr-6 py-5 bg-zinc-900 border border-white/5 rounded-2xl focus:outline-none focus:border-blue-500/50 transition-all text-white font-bold placeholder:text-slate-600"
               value={password}
