@@ -43,36 +43,56 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!supabase) {
-        setLoadingSession(false);
-        return;
-    }
-    
-    // Auth Listener
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session) { 
-          // Varsayılan verileri kontrol et ve yükle
-          await wordService.initializeDefaults(session.user.id);
-          // Sonra verileri çek
-          loadWords(); 
-          loadCustomSets(); 
-      }
-      setLoadingSession(false);
-    });
+    // Başlangıç fonksiyonunu tanımla
+    const initializeApp = async () => {
+        if (!supabase) {
+            setLoadingSession(false);
+            return;
+        }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        try {
+            // 1. Oturumu al
+            const { data: { session }, error } = await supabase.auth.getSession();
+            
+            if (error) throw error;
+            
+            setSession(session);
+
+            if (session) { 
+                // 2. Varsayılan verileri ve kelimeleri yüklemeyi dene
+                // Hata olsa bile catch bloğu yakalayacak, uygulama çökmez.
+                await Promise.allSettled([
+                    wordService.initializeDefaults(session.user.id),
+                    loadWords(),
+                    loadCustomSets()
+                ]);
+            }
+        } catch (error) {
+            console.error("Uygulama başlatma hatası:", error);
+            // Hata olsa bile kullanıcıya bir şey göstermek için devam ediyoruz.
+        } finally {
+            // 3. Her durumda (başarılı veya hatalı) yükleme ekranını kapat
+            setLoadingSession(false);
+        }
+    };
+
+    // Başlat
+    initializeApp();
+
+    // Auth durum değişikliklerini dinle
+    const { data: { subscription } } = supabase?.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session) { 
-          // Giriş yapıldığında da kontrol et
-          await wordService.initializeDefaults(session.user.id);
+          // Giriş yapıldığında verileri tazele (arkaplanda)
+          wordService.initializeDefaults(session.user.id).catch(console.error);
           loadWords(); 
           loadCustomSets(); 
       } else { 
           setWords(prev => prev.filter(w => !w.user_id)); 
           setCustomSetWords([]); 
       }
-    });
+    }) || { data: { subscription: { unsubscribe: () => {} } } };
+
     return () => subscription.unsubscribe();
   }, []);
 
