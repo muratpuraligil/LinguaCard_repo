@@ -124,6 +124,29 @@ export default function App() {
     } catch (e) { return false; }
   };
 
+  const handleResetAccount = async () => {
+      if (!session?.user?.id) return;
+      try {
+          setLoadingSession(true);
+          await wordService.deleteAllUserData(session.user.id);
+          
+          // Verileri sıfırla ve varsayılanları tekrar yükle
+          setWords([]);
+          setCustomSetWords([]);
+          
+          await wordService.initializeDefaults(session.user.id);
+          await loadWords(session.user.id);
+          await loadCustomSets(session.user.id);
+          
+          showToast("Hesap başarıyla sıfırlandı ve varsayılan veriler yüklendi.");
+      } catch (error) {
+          console.error(error);
+          showToast("Sıfırlama sırasında hata oluştu.", "error");
+      } finally {
+          setLoadingSession(false);
+      }
+  };
+
   const confirmDelete = async () => {
     if (wordToDelete) {
       await wordService.deleteWord(wordToDelete);
@@ -259,6 +282,7 @@ export default function App() {
                     wordService.clearCache(); // Logout olunca cache temizle
                     setWords([]);
                 }}
+                onResetAccount={handleResetAccount} // Reset fonksiyonu bağlandı
                 onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
                 onQuickAdd={() => {
                     const btn = document.getElementById('force-open-add-word');

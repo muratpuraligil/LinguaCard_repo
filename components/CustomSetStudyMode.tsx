@@ -20,6 +20,9 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
   const storageKey = `lingua_set_progress_${setName.replace(/\s+/g, '_')}`;
 
   const [progress, setProgress] = useState<Record<string, ProgressState>>({});
+  
+  // DÜZELTME: Varsayılan yön TR_EN (Türkçe -> İngilizce) yapıldı.
+  // Bu, 1. ekran görüntüsündeki (Murat) doğru davranışı varsayılan hale getirir.
   const [direction, setDirection] = useState<LanguageDirection>(LanguageDirection.TR_EN);
   const [showFinishedModal, setShowFinishedModal] = useState(false);
 
@@ -92,6 +95,16 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
   // Normalizasyon Fonksiyonu: Noktalama ve harf duyarlılığını kaldırır
   const normalize = (str: string) => str.toLowerCase().replace(/[.,!?;:"'’`]/g, '').trim();
 
+  // speak fonksiyonu: 'lang' parametresi ile dili belirler
+  const speak = (text: string, lang: 'en-US' | 'tr-TR') => {
+    if (!text) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    u.rate = 0.8; 
+    window.speechSynthesis.speak(u);
+  };
+
   const handleInputChange = (id: string, value: string, targetText: string, currentIndex: number) => {
     // 1. Durumu güncelle
     const isMatch = normalize(value) === normalize(targetText);
@@ -107,7 +120,11 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
 
     // 2. Eğer doğruysa otomatik işlemler
     if (isMatch) {
-        speak(targetText);
+        // Hedef dil neyse onunla oku
+        // TR_EN modunda hedef İngilizcedir (en-US)
+        // EN_TR modunda hedef Türkçedir (tr-TR)
+        const targetLang = direction === LanguageDirection.TR_EN ? 'en-US' : 'tr-TR';
+        speak(targetText, targetLang);
         
         // Bir sonraki inputa odaklan
         setTimeout(() => {
@@ -140,7 +157,8 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
     }));
 
     if (isCorrect) {
-        speak(targetText);
+        const targetLang = direction === LanguageDirection.TR_EN ? 'en-US' : 'tr-TR';
+        speak(targetText, targetLang);
     }
   };
 
@@ -160,22 +178,12 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
       }
   };
 
-  const speak = (text: string) => {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = direction === LanguageDirection.TR_EN ? 'en-US' : 'tr-TR'; 
-    u.rate = 0.8; 
-    window.speechSynthesis.speak(u);
-  };
-
   const handleManualReset = () => {
       if (confirm('Bu set için tüm ilerlemen silinecek. Emin misin?')) {
           performReset();
       }
   };
 
-  // Tamamlanan ekrandan "Sıfırla ve Tekrar Et" butonuna basınca çalışır.
-  // Kullanıcıyı uyarır, veriyi siler ve önceki ekrana atar.
   const handleRestart = () => {
       localStorage.removeItem(storageKey);
       alert("Set sıfırlandı ve 'Devam Eden Çalışmalar' alanına taşındı.");
@@ -332,13 +340,23 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
                   let promptText = '';
                   let targetText = '';
 
-                  if (direction === LanguageDirection.TR_EN) {
+                  // TR_EN: Prompt=Türkçe, Hedef=İngilizce
+                  // EN_TR: Prompt=İngilizce, Hedef=Türkçe
+                  const isTrToEn = direction === LanguageDirection.TR_EN;
+
+                  if (isTrToEn) {
                       promptText = word.turkish_sentence || word.turkish;
                       targetText = word.example_sentence || word.english;
                   } else {
                       promptText = word.example_sentence || word.english;
                       targetText = word.turkish_sentence || word.turkish;
                   }
+
+                  // Dinleme butonu ve placeholder ayarı
+                  // TR_EN (TR->EN) ise: Kullanıcı İngilizce yazar. Ses: EN. Placeholder: İngilizce...
+                  // EN_TR (EN->TR) ise: Kullanıcı Türkçe yazar. Ses: TR. Placeholder: Türkçe...
+                  const speechLang = isTrToEn ? 'en-US' : 'tr-TR';
+                  const inputPlaceholder = isTrToEn ? "İngilizce çevirisi..." : "Türkçe çevirisi...";
 
                   return (
                       <div 
@@ -366,13 +384,14 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
                               <div className="w-full flex items-center gap-3">
                                   <div className="relative flex-1">
                                       <input 
+                                        key={direction} // Yön değişince input resetlenmeli
                                         id={`study-input-${index}`}
                                         type="text"
                                         value={state.input}
                                         onChange={(e) => handleInputChange(word.id, e.target.value, targetText, index)}
                                         onKeyDown={(e) => handleKeyDown(e, word.id, targetText)}
                                         onDoubleClick={handleInputDoubleClick}
-                                        placeholder={direction === LanguageDirection.TR_EN ? "İngilizce çevirisi..." : "Türkçe çevirisi..."}
+                                        placeholder={inputPlaceholder}
                                         disabled={isCorrect} 
                                         className={`w-full bg-zinc-800 border border-white/10 rounded-xl pl-4 pr-12 py-4 text-base md:text-lg font-bold outline-none transition-all placeholder:text-zinc-600 shadow-inner
                                             ${isCorrect ? 'text-emerald-400 bg-emerald-900/20 border-emerald-500/20' : 'text-white focus:border-blue-500 focus:bg-zinc-700'}
@@ -421,10 +440,10 @@ const CustomSetStudyMode: React.FC<CustomSetStudyModeProps> = ({ words, onExit }
                                   </div>
                                   
                                   <button 
-                                      onClick={() => speak(direction === LanguageDirection.TR_EN ? targetText : promptText)} 
+                                      onClick={() => speak(state.input, speechLang)} 
                                       className="p-4 bg-zinc-800 text-slate-400 rounded-xl hover:bg-blue-600 hover:text-white transition-all active:scale-95 flex-shrink-0 border border-white/5 shadow-lg"
                                       tabIndex={-1}
-                                      title="Telaffuz"
+                                      title={isTrToEn ? "İngilizce Dinle" : "Türkçe Dinle"}
                                   >
                                       <Volume2 size={20} />
                                   </button>

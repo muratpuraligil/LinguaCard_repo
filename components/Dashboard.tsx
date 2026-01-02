@@ -1,8 +1,9 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Word, AppMode } from '../types';
 import WordList from './WordList';
-import { BookOpen, Puzzle, Sparkles, Plus, LogOut, Download, Image, Book, Layers } from 'lucide-react';
+import { BookOpen, Puzzle, Sparkles, Plus, LogOut, Download, Image, Book, Layers, Trash2, AlertTriangle } from 'lucide-react';
+import DeleteModal from './DeleteModal';
 
 interface DashboardProps {
   userEmail?: string;
@@ -14,6 +15,7 @@ interface DashboardProps {
   onLogout: () => void;
   onOpenUpload: () => void;
   onQuickAdd: () => void;
+  onResetAccount: () => void; // Yeni Prop
   onExcelUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
@@ -27,8 +29,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   onLogout,
   onOpenUpload,
   onQuickAdd,
+  onResetAccount,
   onExcelUpload
 }) => {
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   const exportToCSV = () => {
     if (words.length === 0) return;
     const headers = "İngilizce Kelime;Türkçe Karşılığı;Örnek Cümle;Türkçe Cümle\n";
@@ -42,10 +47,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     link.download = `lingua_kelimeler_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
   };
-
-  // İstatistikleri Ayrıştır
-  const vocabWords = words.filter(w => !w.set_name); // Normal kelimeler
-  const setCards = words.filter(w => w.set_name);    // Cümle setlerine ait kartlar
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-blue-500/30 flex justify-center">
@@ -65,9 +66,19 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
           </div>
-          <button onClick={onLogout} className="p-4 bg-red-500/10 text-red-500 rounded-2xl border border-red-500/20 hover:bg-red-500 hover:text-white transition-all active:scale-95">
-              <LogOut size={20} />
-          </button>
+          
+          <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowResetConfirm(true)} 
+                className="p-4 bg-zinc-900 text-slate-500 rounded-2xl border border-white/5 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/20 transition-all active:scale-95 group"
+                title="Hesabı Sıfırla"
+              >
+                  <Trash2 size={20} />
+              </button>
+              <button onClick={onLogout} className="p-4 bg-red-500/10 text-red-500 rounded-2xl border border-red-500/20 hover:bg-red-500 hover:text-white transition-all active:scale-95">
+                  <LogOut size={20} />
+              </button>
+          </div>
         </div>
 
         <div className="px-8 my-6">
@@ -77,10 +88,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <h2 className="text-4xl font-black mb-3 tracking-tight">Hadi Pratik Yapalım!</h2>
                   <p className="text-blue-100 font-medium text-lg flex flex-wrap items-center gap-2">
                       Kütüphanende
-                      <span className="text-yellow-400 font-black text-2xl bg-yellow-400/10 px-2 rounded-lg border border-yellow-400/20">{vocabWords.length}</span>
-                      kelime ve
-                      <span className="text-purple-300 font-black text-2xl bg-purple-400/10 px-2 rounded-lg border border-purple-400/20">{setCards.length}</span>
-                      cümle kartı var.
+                      <span className="text-yellow-400 font-black text-2xl bg-yellow-400/10 px-2 rounded-lg border border-yellow-400/20">{words.length}</span>
+                      kelime var.
                   </p>
                   
                   <div className="flex flex-col sm:flex-row gap-4 mt-8">
@@ -132,6 +141,19 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <WordList words={words} onDelete={onDeleteWord} onDeleteByDate={onDeleteByDate} onAdd={onAddWord} onOpenUpload={onOpenUpload} />
         </div>
+
+        {/* Reset Confirmation Modal */}
+        {showResetConfirm && (
+            <DeleteModal 
+                title="Hesabı Sıfırla"
+                description={`Şu an bağlı olan (${userEmail}) hesabındaki TÜM kelimeler ve ilerlemeler silinecek. Bu işlem geri alınamaz.`}
+                onConfirm={() => {
+                    onResetAccount();
+                    setShowResetConfirm(false);
+                }}
+                onCancel={() => setShowResetConfirm(false)}
+            />
+        )}
       </div>
     </div>
   );

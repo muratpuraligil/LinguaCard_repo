@@ -22,7 +22,7 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
   
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash', // Daha kararlı sürüm kullanıldı
+      model: 'gemini-2.0-flash', 
       contents: {
         parts: [
           {
@@ -34,17 +34,24 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
           {
             text: `Analyze the text in this image. Your GOAL is to extract ALL vocabulary items or sentences found.
             
+            CRITICAL: PRESERVE ORDER / SIRALAMAYI KORU
+            1. You MUST output the items in the EXACT order they appear in the image (reading from top to bottom).
+            2. If the items are numbered (1., 2., 3...), the output array MUST follow this numerical sequence exactly. 
+            3. DO NOT reorder, DO NOT shuffle, and DO NOT skip numbers. Start from the first number and go down.
+
             Strictly follow these extraction rules:
 
             1. **NUMBERED LISTS & SENTENCES (CRITICAL):** 
-               - If the image contains a numbered list of sentences (e.g., 1 to 30), you MUST extract EVERY SINGLE LINE. 
-               - **DO NOT** summarize, **DO NOT** pick a sample. Extract ALL items found.
+               - If the image contains a numbered list of sentences (e.g., 1 to 30), you MUST extract EVERY SINGLE LINE in the correct order.
                - **REMOVE NUMBERS:** You MUST remove the leading numbering (e.g., "1.", "2)", "19-") and any immediate whitespace from the start of the sentence.
                - Example: If the image shows "19. Bugün hava güzel.", extract ONLY "Bugün hava güzel." (without the "19.").
                - Use the CLEANED sentence (without number) as both the 'english' word and the 'example_sentence'.
 
-            2. **Vocabulary Lists:**
-               - Extract matching pairs (e.g., "Word -> Meaning").
+            2. **IGNORE HEADERS & TITLES (VERY IMPORTANT):**
+               - DO NOT extract grammar titles, headers, or rule summaries.
+               - IGNORE items like: "AM / IS / ARE", "DO / DOES", "HAVE / HAS", "Present Simple", "Unit 1", "Section A".
+               - IGNORE strings that contain forward slashes "/" intended as grammar alternatives (e.g., "was/were").
+               - Only extract actual sentences or vocabulary words.
 
             3. **Highlighted Words:**
                - If a specific word is highlighted in a sentence, extract that word as 'english' and the full sentence as 'example_sentence'.
@@ -82,7 +89,32 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
 
     try {
       const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+
+      // --- AKILLI FİLTRELEME (POST-PROCESSING) ---
+      // AI bazen prompt'u dinlemeyebilir, kod tarafında kesin temizlik yapıyoruz.
+      const filtered = parsed.filter((item: ExtractedWord) => {
+          const eng = item.english.trim();
+          
+          // 1. "AM / IS / ARE" gibi slash içeren başlıkları temizle
+          if (eng.includes('/') || eng.includes('\\')) {
+              // Eğer içinde slash var ve cümle değilse (kısa ve büyük harfliyse)
+              if (eng.length < 20 && eng.toUpperCase() === eng) return false;
+              // Sadece "Kelime / Kelime" formatındaysa at
+              if (eng.split('/').length > 1 && !eng.includes(' ')) return false;
+          }
+
+          // 2. Çok kısa anlamsız şeyleri temizle (örn: "A", "1.")
+          if (eng.length < 2) return false;
+
+          // 3. Sadece sayı veya özel karakter olanları temizle
+          if (/^[^a-zA-ZğüşıöçĞÜŞİÖÇ]+$/.test(eng)) return false;
+
+          return true;
+      });
+
+      return filtered;
+
     } catch (parseError) {
       console.error("JSON parse hatası:", text);
       return [];

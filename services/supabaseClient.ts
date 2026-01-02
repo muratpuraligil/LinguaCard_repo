@@ -95,6 +95,35 @@ export const wordService = {
 
   clearCache() {
     localStorage.removeItem(LOCAL_STORAGE_KEY);
+    // Ayrıca set ilerlemelerini de temizle
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('lingua_')) {
+            localStorage.removeItem(key);
+        }
+    }
+  },
+
+  // --- HESAP SIFIRLAMA (Sadece o anki kullanıcıyı siler) ---
+  async deleteAllUserData(userId: string): Promise<void> {
+    if (!isSupabaseConfigured || !supabase || !userId) return;
+
+    try {
+        // 1. Veritabanından sil
+        const { error } = await supabase
+            .from('words')
+            .delete()
+            .eq('user_id', userId);
+        
+        if (error) throw error;
+
+        // 2. Yerel önbelleği temizle
+        this.clearCache();
+        
+    } catch (e) {
+        console.error("Hesap sıfırlama hatası:", e);
+        throw e;
+    }
   },
 
   // --- SENKRONİZASYON FONKSİYONU ---
@@ -106,7 +135,7 @@ export const wordService = {
         const localWords = getLocalWords();
         if (localWords.length === 0) return 0;
 
-        // 1. Sunucudaki mevcut kelimeleri (sadece ingilizce kısmını) çek
+        // 1. Sunucudaki mevcut kelimeleri çek
         const { data: remoteData, error } = await supabase
             .from('words')
             .select('word_en')
@@ -117,14 +146,18 @@ export const wordService = {
         const remoteSet = new Set(remoteData?.map(w => (w.word_en || '').toLowerCase().trim()) || []);
 
         // 2. Yereldeki kelimeleri filtrele
-        // Sadece user_id'si OLMAYAN (anonim eklenmiş) veya user_id'si şimdiki kullanıcıyla EŞLEŞEN kelimeleri al.
-        // Başka bir kullanıcının ID'sine sahip kelimeler senkronize edilmemeli.
         const missingWords = localWords.filter(localWord => {
             const cleanEng = localWord.english.toLowerCase().trim();
-            const belongsToCurrentUserOrAnon = !localWord.user_id || localWord.user_id === userId;
             
-            // Sunucuda yoksa VE (anonimse VEYA bu kullanıcıya aitse) EKLE
-            return belongsToCurrentUserOrAnon && !remoteSet.has(cleanEng);
+            // --- KESİN İZOLASYON ---
+            // Eğer kelimenin bir sahibi varsa ve bu kişi şu anki kullanıcı değilse, bu kelimeyi ASLA gönderme.
+            // Bu, Mustafa'nın local storage'ında Murat'ın verisi kalsa bile sunucuya karışmasını engeller.
+            if (localWord.user_id && localWord.user_id !== userId) {
+                return false;
+            }
+
+            // Sadece user_id'si boş olan (anonim) veya zaten bu kullanıcıya ait olanları işle
+            return !remoteSet.has(cleanEng);
         });
 
         if (missingWords.length === 0) return 0;
@@ -134,7 +167,6 @@ export const wordService = {
         // 3. Eksik kelimeleri sunucu formatına çevir ve gönder
         const payload = missingWords.map(w => mapAppToDb(w, userId));
         
-        // Parça parça gönder (batching) - Supabase limitlerine takılmamak için
         const { error: insertError } = await supabase.from('words').insert(payload);
         
         if (insertError) {
@@ -149,24 +181,32 @@ export const wordService = {
     }
   },
 
+  // --- KELİME LİSTESİ (SADECE KELİMELER) ---
   async getAllWords(userId?: string): Promise<Word[]> {
-    const local = getLocalWords();
-    let remoteWords: Word[] = [];
+    const allLocal = getLocalWords();
+    
+    // Cache içindeki set verilerini (custom sets) kaybetmemek için ayıralım
+    const cachedSetWords = allLocal.filter(w => !!w.set_name);
+    
+    // Sadece vocab (kelime) olanları yerelden filtrele
+    const localVocab = allLocal.filter(w => !w.set_name);
+
+    let remoteVocab: Word[] = [];
     
     if (isSupabaseConfigured && supabase) {
       try {
         let query = supabase
           .from('words')
           .select('*')
+          .is('set_name', null) // SADECE SET İSMİ OLMAYANLARI ÇEK
           .order('created_at', { ascending: false });
         
-        // Eğer userId varsa, SADECE o kullanıcının verilerini çek
         if (userId) {
             query = query.eq('user_id', userId);
         }
 
         const { data, error } = await query;
-        if (!error && data) remoteWords = data.map(mapDbToApp);
+        if (!error && data) remoteVocab = data.map(mapDbToApp);
       } catch (e) {
         console.error("Supabase fetch error:", e);
       }
@@ -174,17 +214,19 @@ export const wordService = {
     
     const wordMap = new Map<string, Word>();
     
-    // Önce sunucudan gelenleri ekle (en güncel doğruluk kaynağı)
-    remoteWords.forEach(w => wordMap.set(w.english.toLowerCase().trim(), w));
+    // Önce sunucudan gelen VOCAB verilerini ekle
+    remoteVocab.forEach(w => wordMap.set(w.english.toLowerCase().trim(), w));
     
-    // Sonra yereldekileri ekle (çevrimdışı eklenenler için)
-    // ANCAK: Eğer userId belliyse, yereldeki "başka kullanıcıya ait" kelimeleri ASLA listeye alma.
-    local.forEach(w => {
+    // Sonra yereldeki VOCAB verilerini ekle
+    localVocab.forEach(w => {
         const key = w.english.toLowerCase().trim();
         
-        // Eğer kelimenin bir sahibi varsa ve bu sahip şu anki kullanıcı değilse, bu kelimeyi görmezden gel.
+        // --- KESİN İZOLASYON ---
+        // Eğer kullanıcı giriş yapmışsa (userId var),
+        // Yereldeki kelimenin 'user_id'si var ama şu anki kullanıcıya EŞİT DEĞİLSE, bunu listeye ALMA.
+        // Bu, Murat'ın cache'inin Mustafa'ya görünmesini engeller.
         if (userId && w.user_id && w.user_id !== userId) {
-            return;
+            return; 
         }
 
         if (!wordMap.has(key)) {
@@ -192,14 +234,20 @@ export const wordService = {
         }
     });
     
-    const finalWords = Array.from(wordMap.values()).sort((a, b) => 
+    const finalVocabList = Array.from(wordMap.values()).sort((a, b) => 
       new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     );
 
-    // Temizlenmiş ve birleştirilmiş listeyi yerel depolamaya yaz
-    // Bu sayede çıkış yapan kullanıcının verileri, bir sonraki giriş yapanın cache'inden temizlenmiş olur.
-    setLocalWords(finalWords);
-    return finalWords;
+    // Cache'i güncellerken de temizlik yapalım
+    // Sadece şu anki kullanıcıya ait (veya anonim) verileri cache'e geri yaz
+    const cleanCache = [...finalVocabList, ...cachedSetWords].filter(w => {
+        if (userId && w.user_id && w.user_id !== userId) return false;
+        return true;
+    });
+
+    setLocalWords(cleanCache);
+    
+    return finalVocabList;
   },
 
   async getCustomSetWords(userId?: string): Promise<Word[]> {
