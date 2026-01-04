@@ -37,6 +37,9 @@ export default function App() {
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
 
+  // Flashcard sayfalama (pagination) state'i
+  const [flashcardOffset, setFlashcardOffset] = useState(0);
+
   const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4500);
@@ -164,6 +167,43 @@ export default function App() {
     }
   };
 
+  // Flashcard Modundayken kelime silme (Bildim olarak işaretleme)
+  const handleRemoveWordFromStudy = async (id: string) => {
+      try {
+          // 1. DB'den sil
+          await wordService.deleteWord(id);
+          
+          // 2. Ana listeden sil
+          setWords(prev => prev.filter(w => w.id !== id));
+          
+          // 3. Çalışma setinden sil (Anlık UI güncellemesi için)
+          setStudySet(prev => prev.filter(w => w.id !== id));
+
+          showToast("Kelime listeden kaldırıldı (Öğrenildi).");
+      } catch (e) {
+          showToast("Silme işlemi başarısız.", "error");
+      }
+  };
+
+  const handleNextFlashcardSet = () => {
+      const nextOffset = flashcardOffset + 20;
+      
+      // Eğer sonraki set listenin dışına taşıyorsa başa dön veya kalanları göster
+      if (nextOffset >= words.length) {
+          setFlashcardOffset(0);
+          const newSet = words.slice(0, 20);
+          setStudySet(newSet);
+          showToast("Liste bitti, başa dönüldü.", "warning");
+      } else {
+          setFlashcardOffset(nextOffset);
+          const newSet = words.slice(nextOffset, nextOffset + 20);
+          setStudySet(newSet);
+      }
+      
+      // Her yeni sete geçişte index'i sıfırla
+      localStorage.setItem('lingua_flashcard_index', '0');
+  };
+
   const handleImageFileProcess = (file: File) => {
     if (!file) return;
     setOcrLoading(true);
@@ -228,7 +268,14 @@ export default function App() {
              </div>
         )}
 
-        {mode === AppMode.FLASHCARDS && <FlashcardMode words={studySet} onExit={() => setMode(AppMode.HOME)} />}
+        {mode === AppMode.FLASHCARDS && (
+            <FlashcardMode 
+                words={studySet} 
+                onExit={() => setMode(AppMode.HOME)} 
+                onNextSet={handleNextFlashcardSet}
+                onRemoveWord={handleRemoveWordFromStudy}
+            />
+        )}
         {mode === AppMode.QUIZ && <QuizMode words={studySet} allWords={words} onExit={() => setMode(AppMode.HOME)} />}
         {mode === AppMode.SENTENCES && <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />}
         {mode === AppMode.CUSTOM_SET_STUDY && <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />}
@@ -250,6 +297,12 @@ export default function App() {
                 userEmail={session.user.email} words={words} onModeSelect={mode => {
                     if (mode === AppMode.SENTENCES) {
                         setShowSentenceSelectModal(true);
+                    } else if (mode === AppMode.FLASHCARDS) {
+                        // Flashcards için özel mantık: Pagination (Sıralı Dağılım)
+                        // Rastgele seçim YERİNE, offset kullanarak sıradaki 20 kelimeyi alıyoruz.
+                        const currentSet = words.slice(flashcardOffset, flashcardOffset + 20);
+                        setStudySet(currentSet);
+                        setMode(mode);
                     } else { 
                         // Quiz Modu için özel Resume mantığı
                         if (mode === AppMode.QUIZ) {
@@ -263,7 +316,7 @@ export default function App() {
                             }
                         }
 
-                        // Yeni set oluştur
+                        // Diğer modlar için (Quiz vb.) şimdilik rastgele kalabilir veya değiştirilebilir
                         const newSet = [...words].sort(() => 0.5 - Math.random()).slice(0, 20);
                         setStudySet(newSet);
                         

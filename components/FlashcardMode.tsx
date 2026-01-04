@@ -1,14 +1,17 @@
+
 import React, { useState, useEffect } from 'react';
 import { Word, LanguageDirection } from '../types';
-import { ArrowLeft, Check, Volume2, Languages, RotateCcw, Trophy, Home, Repeat } from 'lucide-react';
+import { ArrowLeft, Check, Volume2, Languages, RotateCcw, Trophy, Home, Repeat, Layers, Trash2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface FlashcardModeProps {
   words: Word[];
   onExit: () => void;
+  onNextSet: () => void; // Yeni Gruba Geçme Fonksiyonu
+  onRemoveWord: (id: string) => void; // Bildiğim kelimeyi listeden silme
 }
 
-const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
+const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit, onNextSet, onRemoveWord }) => {
   const [currentIndex, setCurrentIndex] = useState(() => {
     const saved = localStorage.getItem('lingua_flashcard_index');
     return saved ? Math.min(parseInt(saved), words.length - 1) : 0;
@@ -23,6 +26,18 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
   
   // Güvenlik kontrolü
   const currentWord = words && words.length > 0 ? words[currentIndex] : null;
+
+  useEffect(() => {
+    // Eğer geçerli kelime silindiyse (currentWord null ise) ve liste bitmediyse indexi düzelt
+    if (!currentWord && words.length > 0) {
+        if (currentIndex >= words.length) {
+            setCurrentIndex(words.length - 1);
+        }
+    } else if (words.length === 0 && !isFinished) {
+        // Eğer setteki tüm kelimeler silindiyse bitir
+        setIsFinished(true);
+    }
+  }, [words, currentIndex, currentWord, isFinished]);
 
   useEffect(() => {
     if (!isFinished) {
@@ -87,18 +102,42 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
       setIsFlipped(false);
   };
 
+  const handleNextSetClick = () => {
+      onNextSet();
+      handleRestart(); // Yeni seti yükle ve başa sar
+  };
+
+  const handleDeleteCurrentWord = (e: React.MouseEvent) => {
+      // Olayın kartı çevirmesini engelle (Hem React hem Native event seviyesinde)
+      e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
+
+      if (!currentWord) return;
+      
+      if (window.confirm("Bu kelimeyi çok iyi bildiğin için listeden tamamen silmek istiyor musun?")) {
+          onRemoveWord(currentWord.id);
+          // Not: onRemoveWord App.tsx içinde çalışıp state'i güncellediğinde,
+          // buradaki useEffect devreye girip UI'ı tazeleyecektir.
+      }
+  };
+
   const toggleDirection = (e?: React.MouseEvent) => {
       e?.stopPropagation();
       setDirection(prev => prev === LanguageDirection.EN_TR ? LanguageDirection.TR_EN : LanguageDirection.EN_TR);
   };
 
   if (!words || words.length === 0) {
-      return (
-          <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 text-white font-['Plus_Jakarta_Sans']">
-              <p className="text-xl font-bold mb-4">Çalışılacak kelime bulunamadı.</p>
-              <button onClick={onExit} className="px-6 py-3 bg-white text-black rounded-xl font-bold">Geri Dön</button>
-          </div>
-      );
+      if (isFinished) {
+           // Bitiş ekranına düşsün
+      } else {
+          return (
+              <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 text-white font-['Plus_Jakarta_Sans']">
+                  <p className="text-xl font-bold mb-4">Çalışılacak kelime kalmadı.</p>
+                  <button onClick={handleNextSetClick} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold">Yeni Gruba Geç</button>
+              </div>
+          );
+      }
   }
 
   if (isFinished) {
@@ -112,21 +151,34 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
                 <h2 className="text-4xl font-black text-white mb-4 tracking-tight">Harika İş!</h2>
                 <p className="text-slate-400 font-medium text-lg mb-10 leading-relaxed">
                     Bu seti başarıyla tamamladın.<br/>
-                    <span className="text-yellow-500 font-bold">{words.length} kelimeyi</span> gözden geçirdin.
+                    <span className="text-yellow-500 font-bold">{words.length > 0 ? words.length : 'Tüm'} kelimeyi</span> gözden geçirdin.
                 </p>
 
                 <div className="space-y-4">
+                    {/* YENİ GRUBA GEÇ */}
                     <button 
-                        onClick={handleRestart}
-                        className="w-full py-5 bg-white text-black rounded-2xl font-black text-lg hover:bg-yellow-400 transition-all active:scale-95 flex items-center justify-center gap-3 shadow-lg"
+                        onClick={handleNextSetClick}
+                        className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-lg hover:bg-blue-500 transition-all active:scale-95 flex items-center justify-center gap-3 shadow-lg shadow-blue-900/20"
                     >
-                        <RotateCcw size={20} />
-                        Tekrar Et
+                        <Layers size={20} />
+                        Yeni Gruba Geç
                     </button>
+
+                    {/* TEKRAR ET */}
+                    {words.length > 0 && (
+                        <button 
+                            onClick={handleRestart}
+                            className="w-full py-5 bg-zinc-800 text-white rounded-2xl font-black text-lg hover:bg-zinc-700 transition-all active:scale-95 flex items-center justify-center gap-3 border border-white/5"
+                        >
+                            <RotateCcw size={20} />
+                            Tekrar Et
+                        </button>
+                    )}
                     
+                    {/* ANA MENÜ */}
                     <button 
                         onClick={onExit}
-                        className="w-full py-5 bg-zinc-800 text-slate-300 rounded-2xl font-black text-lg hover:bg-zinc-700 hover:text-white transition-all active:scale-95 flex items-center justify-center gap-3 border border-white/5"
+                        className="w-full py-5 bg-transparent text-slate-500 rounded-2xl font-black text-lg hover:text-white transition-all active:scale-95 flex items-center justify-center gap-3"
                     >
                         <Home size={20} />
                         Ana Menüye Dön
@@ -205,6 +257,22 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
   };
   const backFaceStyle: React.CSSProperties = { ...faceStyle, transform: 'rotateY(180deg)' };
 
+  // Ortak "Sil/Bildim" butonu - Inline tanımlama ile event handling'i garantiye alalım
+  // Z-index 100 ve pointer-events-auto ekleyerek tıklanabilirliği zorluyoruz.
+  const renderDeleteButton = (isDark: boolean) => (
+      <button 
+        onClick={handleDeleteCurrentWord}
+        className={`absolute top-6 right-6 p-3 rounded-full transition-all active:scale-95 z-[100] cursor-pointer pointer-events-auto
+            ${isDark 
+                ? 'bg-white/5 text-slate-500 hover:bg-red-500 hover:text-white border border-white/5' 
+                : 'bg-black/5 text-black/40 hover:bg-red-500 hover:text-white'
+            }`}
+        title="Bunu biliyorum, listeden sil"
+      >
+          <Trash2 size={20} />
+      </button>
+  );
+
   return (
     <div className="min-h-screen bg-black flex flex-col font-['Plus_Jakarta_Sans'] relative overflow-hidden text-white">
       
@@ -234,6 +302,9 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
                 
                 {/* FRONT FACE */}
                 <div style={faceStyle} className={frontStyle.wrapperClass}>
+                    {/* Delete Icon */}
+                    {renderDeleteButton(!frontContent.isEnglish)}
+
                     <div className={`absolute top-8 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] ${frontStyle.labelBg}`}>
                         {frontContent.label}
                     </div>
@@ -275,6 +346,9 @@ const FlashcardMode: React.FC<FlashcardModeProps> = ({ words, onExit }) => {
 
                 {/* BACK FACE */}
                 <div style={backFaceStyle} className={backStyle.wrapperClass}>
+                    {/* Delete Icon */}
+                    {renderDeleteButton(!backContent.isEnglish)}
+
                     <div className={`absolute top-8 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] ${backStyle.labelBg}`}>
                         {backContent.label}
                     </div>
