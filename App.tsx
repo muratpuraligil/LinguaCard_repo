@@ -114,10 +114,10 @@ export default function App() {
       setCustomSetWords(data);
   };
 
-  const handleAddWord = async (english: string, turkish: string, example: string): Promise<boolean> => {
+  const handleAddWord = async (english: string, turkish: string, example: string, turkish_sentence: string): Promise<boolean> => {
     try {
       const userId = session?.user?.id;
-      const newWord = await wordService.addWord({ english, turkish, example_sentence: example, turkish_sentence: '' }, userId);
+      const newWord = await wordService.addWord({ english, turkish, example_sentence: example, turkish_sentence: turkish_sentence }, userId);
       if (newWord) {
         setWords(prev => [newWord, ...prev]);
         showToast("Kelime başarıyla eklendi.");

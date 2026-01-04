@@ -9,13 +9,13 @@ interface DashboardProps {
   userEmail?: string;
   words: Word[];
   onModeSelect: (mode: AppMode) => void;
-  onAddWord: (english: string, turkish: string, example: string) => Promise<boolean>;
+  onAddWord: (english: string, turkish: string, example: string, turkish_sentence: string) => Promise<boolean>;
   onDeleteWord: (id: string) => void;
   onDeleteByDate: (date: string) => void;
   onLogout: () => void;
   onOpenUpload: () => void;
   onQuickAdd: () => void;
-  onResetAccount: () => void; // Yeni Prop
+  onResetAccount: () => void; 
   onExcelUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 

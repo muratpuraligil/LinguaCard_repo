@@ -7,16 +7,20 @@ interface WordListProps {
   words: Word[];
   onDelete: (id: string) => void;
   onDeleteByDate: (date: string) => void;
-  onAdd: (english: string, turkish: string, example: string) => Promise<boolean>;
+  onAdd: (english: string, turkish: string, example: string, turkish_sentence: string) => Promise<boolean>;
   onOpenUpload: () => void;
 }
 
 const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, onAdd, onOpenUpload }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  
+  // Form States
   const [newEng, setNewEng] = useState('');
   const [newTr, setNewTr] = useState('');
-  const [newEx, setNewEx] = useState('');
+  const [newEx, setNewEx] = useState('');      // İngilizce Cümle
+  const [newTrEx, setNewTrEx] = useState('');  // Türkçe Cümle (YENİ)
+  
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -52,7 +56,8 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
     setFormError(null);
     setIsSubmitting(true);
 
-    const success = await onAdd(newEng, newTr, newEx);
+    // Yeni parametreyi de gönderiyoruz
+    const success = await onAdd(newEng, newTr, newEx, newTrEx);
 
     setIsSubmitting(false);
 
@@ -60,6 +65,7 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
         setNewEng('');
         setNewTr('');
         setNewEx('');
+        setNewTrEx(''); // Temizle
         setIsAdding(false);
     } else {
         setFormError('Bu kelime zaten listenizde mevcut!');
@@ -135,6 +141,8 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
                     <h4 className="text-2xl font-black text-white">Yeni Kelime</h4>
                     <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Manuel Giriş</p>
                 </div>
+                
+                {/* Kelime Alanları */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <input 
                       required 
@@ -155,7 +163,28 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
                       onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
                     />
                 </div>
-                <input value={newEx} onChange={e => handleInputChange(setNewEx, e.target.value)} placeholder="Örnek Cümle (Opsiyonel)" className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold mb-8"/>
+
+                {/* Cümle Alanları */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div className="relative">
+                        <span className="absolute -top-3 left-4 bg-zinc-900 px-2 text-[10px] font-bold text-slate-500 uppercase">Opsiyonel</span>
+                        <input 
+                          value={newEx} 
+                          onChange={e => handleInputChange(setNewEx, e.target.value)} 
+                          placeholder="İngilizce Örnek Cümle" 
+                          className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold"
+                        />
+                    </div>
+                    <div className="relative">
+                        <span className="absolute -top-3 left-4 bg-zinc-900 px-2 text-[10px] font-bold text-slate-500 uppercase">Opsiyonel</span>
+                        <input 
+                          value={newTrEx} 
+                          onChange={e => handleInputChange(setNewTrEx, e.target.value)} 
+                          placeholder="Türkçe Cümle Çevirisi" 
+                          className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold"
+                        />
+                    </div>
+                </div>
                 
                 {formError && (
                     <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 animate-shake">
