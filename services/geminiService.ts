@@ -10,6 +10,7 @@ export interface ExtractedWord {
 
 /**
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
+ * Fallback Stratejisi: Önce Flash modelini dener, limit aşılırsa Pro modeline geçer.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
   const apiKey = process.env.API_KEY;
@@ -20,10 +21,9 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
 
   const ai = new GoogleGenAI({ apiKey });
   
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash', 
-      contents: {
+  // Ortak Prompt ve Konfigürasyon
+  const promptContent = {
+    contents: {
         parts: [
           {
             inlineData: {
@@ -65,8 +65,8 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
             Return ONLY the JSON array. Ensure the array contains ALL items found in the image.`,
           },
         ],
-      },
-      config: {
+    },
+    config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -81,10 +81,44 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
             required: ["english", "turkish", "example_sentence", "turkish_sentence"],
           },
         },
-      }
-    });
+    }
+  };
 
-    const text = response.text;
+  try {
+    let text = "";
+    
+    // --- FALLBACK MEKANİZMASI ---
+    // 1. Önce Hızlı ve Ucuz olan FLASH modelini dene (gemini-2.0-flash)
+    try {
+        console.log("Attempting with Flash model...");
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.0-flash', 
+            ...promptContent
+        });
+        text = response.text || "";
+    } catch (error: any) {
+        const errMsg = error.message || "";
+        
+        // Hata Quota/Limit kaynaklı mı kontrol et
+        const isQuotaError = errMsg.includes("429") || 
+                             errMsg.toLowerCase().includes("exhausted") || 
+                             errMsg.toLowerCase().includes("quota");
+
+        if (isQuotaError) {
+            // 2. Limit hatası ise PRO modeline geç (gemini-3-pro-preview)
+            console.warn("⚠️ Flash model quota exceeded. Switching to PRO model fallback...");
+            
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-pro-preview',
+                ...promptContent
+            });
+            text = response.text || "";
+        } else {
+            // Başka bir hataysa (örn: görsel bozuk, ağ hatası) direkt fırlat
+            throw error;
+        }
+    }
+
     if (!text) return [];
 
     try {
@@ -123,7 +157,7 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
     console.error("Gemini API Hatası Detayı:", error);
     const errMsg = error.message || "";
     
-    // Kota aşımı kontrolü (429 Hatası)
+    // Eğer Pro modeli de hata verirse buraya düşer
     if (errMsg.includes("429") || errMsg.toLowerCase().includes("exhausted") || errMsg.toLowerCase().includes("quota")) {
         throw new Error("QUOTA_EXCEEDED");
     }
