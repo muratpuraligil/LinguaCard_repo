@@ -8,9 +8,15 @@ export interface ExtractedWord {
   turkish_sentence: string;
 }
 
+// Bekleme yardımcı fonksiyonu
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
- * Fallback Stratejisi: Önce Flash modelini dener, limit aşılırsa Pro modeline geçer.
+ * Strateji: 
+ * 1. gemini-2.0-flash dene.
+ * 2. Hata (429) alırsa 3 saniye bekle ve tekrar gemini-2.0-flash dene.
+ * 3. Yine hata alırsa gemini-2.0-flash-lite-preview-02-05 dene.
  */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
   const apiKey = process.env.API_KEY;
@@ -84,38 +90,60 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
     }
   };
 
+  // API Çağrısını yapan yardımcı fonksiyon
+  const callApi = async (modelName: string) => {
+      const response = await ai.models.generateContent({
+          model: modelName,
+          ...promptContent
+      });
+      return response.text || "";
+  };
+
+  // Hata türünü kontrol eden yardımcı fonksiyon
+  const isQuotaError = (error: any) => {
+      const msg = (error.message || "").toLowerCase();
+      return msg.includes("429") || msg.includes("exhausted") || msg.includes("quota");
+  };
+
   try {
     let text = "";
     
-    // --- FALLBACK MEKANİZMASI ---
-    // 1. Önce Hızlı ve Ucuz olan FLASH modelini dene (gemini-2.0-flash)
+    // --- AKILLI RETRY MEKANİZMASI ---
+    
+    // DENEME 1: Hızlı Model (gemini-2.0-flash)
     try {
-        console.log("Attempting with Flash model...");
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash', 
-            ...promptContent
-        });
-        text = response.text || "";
-    } catch (error: any) {
-        const errMsg = error.message || "";
-        
-        // Hata Quota/Limit kaynaklı mı kontrol et
-        const isQuotaError = errMsg.includes("429") || 
-                             errMsg.toLowerCase().includes("exhausted") || 
-                             errMsg.toLowerCase().includes("quota");
-
-        if (isQuotaError) {
-            // 2. Limit hatası ise PRO modeline geç (gemini-3-pro-preview)
-            console.warn("⚠️ Flash model quota exceeded. Switching to PRO model fallback...");
+        console.log("Attempt 1: Gemini 2.0 Flash");
+        text = await callApi('gemini-2.0-flash');
+    } catch (err1: any) {
+        if (isQuotaError(err1)) {
+            console.warn("⚠️ Limit hit on Attempt 1. Waiting 3s...");
+            // 3 Saniye bekle (Rate Limit'in sıfırlanması için)
+            await delay(3000);
             
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-pro-preview',
-                ...promptContent
-            });
-            text = response.text || "";
+            // DENEME 2: Aynı model ile tekrar dene (Genellikle transient hatadır)
+            try {
+                console.log("Attempt 2: Gemini 2.0 Flash (Retry)");
+                text = await callApi('gemini-2.0-flash');
+            } catch (err2: any) {
+                if (isQuotaError(err2)) {
+                    console.warn("⚠️ Limit hit on Attempt 2. Switching to Flash Lite...");
+                    await delay(1000); // Kısa bir bekleme daha
+                    
+                    // DENEME 3: Daha hafif model (Flash Lite)
+                    try {
+                        console.log("Attempt 3: Gemini Flash Lite");
+                        text = await callApi('gemini-2.0-flash-lite-preview-02-05');
+                    } catch (err3) {
+                        // Artık hepsi başarısız olduysa pes et
+                        throw err3;
+                    }
+                } else {
+                    throw err2;
+                }
+            }
         } else {
-            // Başka bir hataysa (örn: görsel bozuk, ağ hatası) direkt fırlat
-            throw error;
+            // Quota hatası değilse (örn: Bad Request) direkt fırlat
+            throw err1;
         }
     }
 
@@ -126,22 +154,15 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       if (!Array.isArray(parsed)) return [];
 
       // --- AKILLI FİLTRELEME (POST-PROCESSING) ---
-      // AI bazen prompt'u dinlemeyebilir, kod tarafında kesin temizlik yapıyoruz.
       const filtered = parsed.filter((item: ExtractedWord) => {
           const eng = item.english.trim();
           
-          // 1. "AM / IS / ARE" gibi slash içeren başlıkları temizle
           if (eng.includes('/') || eng.includes('\\')) {
-              // Eğer içinde slash var ve cümle değilse (kısa ve büyük harfliyse)
               if (eng.length < 20 && eng.toUpperCase() === eng) return false;
-              // Sadece "Kelime / Kelime" formatındaysa at
               if (eng.split('/').length > 1 && !eng.includes(' ')) return false;
           }
 
-          // 2. Çok kısa anlamsız şeyleri temizle (örn: "A", "1.")
           if (eng.length < 2) return false;
-
-          // 3. Sadece sayı veya özel karakter olanları temizle
           if (/^[^a-zA-ZğüşıöçĞÜŞİÖÇ]+$/.test(eng)) return false;
 
           return true;
@@ -154,15 +175,13 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       return [];
     }
   } catch (error: any) {
-    console.error("Gemini API Hatası Detayı:", error);
+    console.error("Gemini API Final Error:", error);
     const errMsg = error.message || "";
     
-    // Eğer Pro modeli de hata verirse buraya düşer
-    if (errMsg.includes("429") || errMsg.toLowerCase().includes("exhausted") || errMsg.toLowerCase().includes("quota")) {
+    if (isQuotaError(error)) {
         throw new Error("QUOTA_EXCEEDED");
     }
     
-    // Geçersiz key kontrolü
     if (errMsg.includes("API key not valid") || errMsg.includes("403") || errMsg.includes("400")) {
         throw new Error("INVALID_API_KEY");
     }
