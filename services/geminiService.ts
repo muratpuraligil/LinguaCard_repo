@@ -8,67 +8,36 @@ export interface ExtractedWord {
   turkish_sentence: string;
 }
 
-// Bekleme yardımcı fonksiyonu
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-/**
- * Görselden kelimeleri yapılandırılmış şema kullanarak çıkarır.
- * Strateji: 
- * 1. gemini-2.0-flash dene.
- * 2. Hata (429) alırsa 3 saniye bekle ve tekrar gemini-2.0-flash dene.
- * 3. Yine hata alırsa gemini-2.0-flash-lite-preview-02-05 dene.
- */
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<ExtractedWord[]> => {
   const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("MISSING_API_KEY");
   
-  if (!apiKey) {
-    throw new Error("MISSING_API_KEY");
-  }
-
   const ai = new GoogleGenAI({ apiKey });
   
-  // Ortak Prompt ve Konfigürasyon
+  // Base64 verisi 'data:image/jpeg;base64,' prefix'ini içeriyorsa temizle, içermiyorsa olduğu gibi kullan.
+  const base64Content = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+
   const promptContent = {
     contents: {
         parts: [
+          { inlineData: { mimeType: mimeType, data: base64Content } },
           {
-            inlineData: {
-              mimeType: mimeType,
-              data: base64Data.split(',')[1],
-            },
-          },
-          {
-            text: `Analyze the text in this image. Your GOAL is to extract ALL vocabulary items or sentences found.
+            text: `Analyze the text in this image. Extract vocabulary items or sentences.
             
-            CRITICAL: PRESERVE ORDER / SIRALAMAYI KORU
-            1. You MUST output the items in the EXACT order they appear in the image (reading from top to bottom).
-            2. If the items are numbered (1., 2., 3...), the output array MUST follow this numerical sequence exactly. 
-            3. DO NOT reorder, DO NOT shuffle, and DO NOT skip numbers. Start from the first number and go down.
+            STRICT RULES:
+            1. Extract items in EXACT reading order.
+            2. If an item is just a single word, YOU MUST GENERATE A CREATIVE AND RELEVANT English example sentence for it. 
+               DO NOT repeat the word as the sentence.
+            3. Translate the word and your generated (or extracted) sentence into Turkish.
+            4. If the image already contains a sentence, use it and translate it.
 
-            Strictly follow these extraction rules:
-
-            1. **NUMBERED LISTS & SENTENCES (CRITICAL):** 
-               - If the image contains a numbered list of sentences (e.g., 1 to 30), you MUST extract EVERY SINGLE LINE in the correct order.
-               - **REMOVE NUMBERS:** You MUST remove the leading numbering (e.g., "1.", "2)", "19-") and any immediate whitespace from the start of the sentence.
-               - Example: If the image shows "19. Bugün hava güzel.", extract ONLY "Bugün hava güzel." (without the "19.").
-               - Use the CLEANED sentence (without number) as both the 'english' word and the 'example_sentence'.
-
-            2. **IGNORE HEADERS & TITLES (VERY IMPORTANT):**
-               - DO NOT extract grammar titles, headers, or rule summaries.
-               - IGNORE items like: "AM / IS / ARE", "DO / DOES", "HAVE / HAS", "Present Simple", "Unit 1", "Section A".
-               - IGNORE strings that contain forward slashes "/" intended as grammar alternatives (e.g., "was/were").
-               - Only extract actual sentences or vocabulary words.
-
-            3. **Highlighted Words:**
-               - If a specific word is highlighted in a sentence, extract that word as 'english' and the full sentence as 'example_sentence'.
-
-            For each extracted item, return a JSON object with:
-            - 'english': The word OR the full sentence found in the image (CLEANED of numbers).
-            - 'turkish': The Turkish translation found in the image (or translate it if missing).
-            - 'example_sentence': The full sentence containing the word (if it's a sentence list, repeat the 'english' field here).
-            - 'turkish_sentence': Turkish translation of the example sentence.
-            
-            Return ONLY the JSON array. Ensure the array contains ALL items found in the image.`,
+            Output Format (JSON Array):
+            - 'english': The vocabulary word.
+            - 'turkish': Turkish meaning.
+            - 'example_sentence': A full, meaningful English sentence (MUST BE DIFFERENT FROM THE WORD).
+            - 'turkish_sentence': Turkish translation of that sentence.`,
           },
         ],
     },
@@ -90,102 +59,68 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
     }
   };
 
-  // API Çağrısını yapan yardımcı fonksiyon
   const callApi = async (modelName: string) => {
-      const response = await ai.models.generateContent({
-          model: modelName,
-          ...promptContent
-      });
+      const response = await ai.models.generateContent({ model: modelName, ...promptContent });
       return response.text || "";
   };
 
-  // Hata türünü kontrol eden yardımcı fonksiyon
   const isQuotaError = (error: any) => {
       const msg = (error.message || "").toLowerCase();
-      return msg.includes("429") || msg.includes("exhausted") || msg.includes("quota");
+      return msg.includes("429") || msg.includes("exhausted") || msg.includes("quota") || msg.includes("resource");
+  };
+
+  // Helper to clean Markdown code blocks if the model adds them despite config
+  const cleanJsonText = (text: string) => {
+      return text.replace(/```json/g, '').replace(/```/g, '').trim();
   };
 
   try {
     let text = "";
-    
-    // --- AKILLI RETRY MEKANİZMASI ---
-    
-    // DENEME 1: Hızlı Model (gemini-2.0-flash)
     try {
-        console.log("Attempt 1: Gemini 2.0 Flash");
-        text = await callApi('gemini-2.0-flash');
+        // Ana model: gemini-3-pro-preview
+        text = await callApi('gemini-3-pro-preview');
     } catch (err1: any) {
         if (isQuotaError(err1)) {
-            console.warn("⚠️ Limit hit on Attempt 1. Waiting 3s...");
-            // 3 Saniye bekle (Rate Limit'in sıfırlanması için)
+            console.warn("Gemini 3 Pro Quota Hit, retrying...");
             await delay(3000);
-            
-            // DENEME 2: Aynı model ile tekrar dene (Genellikle transient hatadır)
             try {
-                console.log("Attempt 2: Gemini 2.0 Flash (Retry)");
-                text = await callApi('gemini-2.0-flash');
+                text = await callApi('gemini-3-pro-preview');
             } catch (err2: any) {
                 if (isQuotaError(err2)) {
-                    console.warn("⚠️ Limit hit on Attempt 2. Switching to Flash Lite...");
-                    await delay(1000); // Kısa bir bekleme daha
-                    
-                    // DENEME 3: Daha hafif model (Flash Lite)
-                    try {
-                        console.log("Attempt 3: Gemini Flash Lite");
-                        text = await callApi('gemini-2.0-flash-lite-preview-02-05');
-                    } catch (err3) {
-                        // Artık hepsi başarısız olduysa pes et
-                        throw err3;
-                    }
-                } else {
-                    throw err2;
-                }
+                    console.warn("Falling back to Flash...");
+                    await delay(1000);
+                    // Fallback model: Hızlı ve kararlı
+                    text = await callApi('gemini-2.5-flash-latest');
+                } else throw err2;
             }
         } else {
-            // Quota hatası değilse (örn: Bad Request) direkt fırlat
-            throw err1;
+             // Model bulunamadı veya başka hata durumunda Flash'a düş
+             console.warn("Primary model error, failing over to Flash:", err1);
+             text = await callApi('gemini-2.5-flash-latest');
         }
     }
 
     if (!text) return [];
 
     try {
-      const parsed = JSON.parse(text);
+      const cleanedText = cleanJsonText(text);
+      const parsed = JSON.parse(cleanedText);
       if (!Array.isArray(parsed)) return [];
-
-      // --- AKILLI FİLTRELEME (POST-PROCESSING) ---
-      const filtered = parsed.filter((item: ExtractedWord) => {
+      
+      return parsed.filter((item: ExtractedWord) => {
+          if (!item.english || !item.turkish) return false;
           const eng = item.english.trim();
-          
-          if (eng.includes('/') || eng.includes('\\')) {
-              if (eng.length < 20 && eng.toUpperCase() === eng) return false;
-              if (eng.split('/').length > 1 && !eng.includes(' ')) return false;
-          }
-
-          if (eng.length < 2) return false;
-          if (/^[^a-zA-ZğüşıöçĞÜŞİÖÇ]+$/.test(eng)) return false;
-
+          // Basit validasyon: Kelime en az 2 karakter olmalı ve tamamen sembollerden oluşmamalı
+          if (eng.length < 2 || /^[^a-zA-ZğüşıöçĞÜŞİÖÇ0-9\s]+$/.test(eng)) return false;
           return true;
       });
-
-      return filtered;
-
-    } catch (parseError) {
-      console.error("JSON parse hatası:", text);
-      return [];
+    } catch (e) { 
+        console.error("JSON Parse Error:", e);
+        return []; 
     }
   } catch (error: any) {
-    console.error("Gemini API Final Error:", error);
-    const errMsg = error.message || "";
-    
-    if (isQuotaError(error)) {
-        throw new Error("QUOTA_EXCEEDED");
-    }
-    
-    if (errMsg.includes("API key not valid") || errMsg.includes("403") || errMsg.includes("400")) {
-        throw new Error("INVALID_API_KEY");
-    }
-    
-    throw new Error("Görsel analiz edilemedi. Lütfen bağlantınızı kontrol edin.");
+    console.error("Gemini Service Error:", error);
+    if (isQuotaError(error)) throw new Error("QUOTA_EXCEEDED");
+    throw new Error("Görsel analiz edilemedi.");
   }
 };

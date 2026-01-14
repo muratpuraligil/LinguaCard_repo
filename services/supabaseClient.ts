@@ -26,48 +26,6 @@ const setLocalWords = (words: Word[]) => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(words));
 };
 
-// --- Varsayılan Veriler ---
-
-const DEFAULT_VOCAB = [
-  { english: 'Improve', turkish: 'Geliştirmek, iyileştirmek', example_sentence: 'I want to improve my English by practicing every day.', turkish_sentence: 'Her gün pratik yaparak İngilizcemi geliştirmek istiyorum.' },
-  { english: 'Decide', turkish: 'Karar vermek', example_sentence: 'She decided to study abroad next year.', turkish_sentence: 'Gelecek yıl yurt dışında okumaya karar verdi.' },
-  { english: 'Comfortable', turkish: 'Rahat, konforlu', example_sentence: 'This chair is very comfortable to sit on.', turkish_sentence: 'Bu sandalye oturmak için çok rahat.' },
-  { english: 'Enough', turkish: 'Yeterli', example_sentence: 'I don’t have enough time to finish the work today.', turkish_sentence: 'Bugün işi bitirmek için yeterli zamanım yok.' },
-  { english: 'Explain', turkish: 'Açıklamak', example_sentence: 'Can you explain this rule again, please?', turkish_sentence: 'Bu kuralı tekrar açıklar mısın lütfen?' },
-];
-
-const DEFAULT_SENTENCE_SET = [
-  { english: 'The planes are at the airport.', turkish: 'Uçaklar havaalanında.', example_sentence: 'The planes are at the airport.', turkish_sentence: 'Uçaklar havaalanında.' },
-  { english: 'The photos are in the album.', turkish: 'Fotoğraflar albümde.', example_sentence: 'The photos are in the album.', turkish_sentence: 'Fotoğraflar albümde.' },
-  { english: 'These are dangerous animals.', turkish: 'Bunlar tehlikeli hayvanlar.', example_sentence: 'These are dangerous animals.', turkish_sentence: 'Bunlar tehlikeli hayvanlar.' },
-  { english: 'These are good books.', turkish: 'Bunlar iyi kitaplar.', example_sentence: 'These are good books.', turkish_sentence: 'Bunlar iyi kitaplar.' },
-  { english: 'Are the trees green or gray?', turkish: 'Ağaçlar yeşil mi yoksa gri mi?', example_sentence: 'Are the trees green or gray?', turkish_sentence: 'Ağaçlar yeşil mi yoksa gri mi?' },
-  { english: 'Are the clouds brown or white?', turkish: 'Bulutlar kahverengi mi yoksa beyaz mı?', example_sentence: 'Are the clouds brown or white?', turkish_sentence: 'Bulutlar kahverengi mi yoksa beyaz mı?' },
-  { english: 'Is this an English dictionary or a French one?', turkish: 'Bu, İngilizce mi yoksa Fransızca sözlük mü?', example_sentence: 'Is this an English dictionary or a French one?', turkish_sentence: 'Bu, İngilizce mi yoksa Fransızca sözlük mü?' },
-  { english: 'Is it a sports car or a classic car?', turkish: 'Bir spor araba mı yoksa klasik bir araba mı?', example_sentence: 'Is it a sports car or a classic car?', turkish_sentence: 'Bir spor araba mı yoksa klasik bir araba mı?' },
-  { english: 'Is Egypt in Europe or in Africa?', turkish: 'Mısır Avrupa’da mı yoksa Afrika’da mı?', example_sentence: 'Is Egypt in Europe or in Africa?', turkish_sentence: 'Mısır Avrupa’da mı yoksa Afrika’da mı?' },
-  { english: 'Is this a butterfly or a bee?', turkish: 'Bu, kelebek mi arı mı?', example_sentence: 'Is this a butterfly or a bee?', turkish_sentence: 'Bu, kelebek mi arı mı?' },
-];
-
-// --- Formatlama Fonksiyonları ---
-
-const formatEnglishWord = (str: string): string => {
-  if (!str) return '';
-  let cleaned = str.replace(/ı/g, 'i').replace(/İ/g, 'I');
-  if (cleaned.includes(' ')) {
-      return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-  }
-  return cleaned.charAt(0).toLocaleUpperCase('en-US') + cleaned.slice(1).toLocaleLowerCase('en-US');
-};
-
-const formatTurkishWord = (str: string): string => {
-  if (!str) return '';
-  if (str.includes(' ')) {
-      return str.charAt(0).toLocaleUpperCase('tr-TR') + str.slice(1);
-  }
-  return str.charAt(0).toLocaleUpperCase('tr-TR') + str.slice(1).toLocaleLowerCase('tr-TR');
-};
-
 const mapDbToApp = (dbRecord: any): Word => ({
   id: dbRecord.id,
   english: dbRecord.word_en || dbRecord.english || '',
@@ -76,7 +34,8 @@ const mapDbToApp = (dbRecord: any): Word => ({
   turkish_sentence: dbRecord.example_sentence_tr || dbRecord.turkish_sentence || '',
   created_at: dbRecord.created_at,
   user_id: dbRecord.user_id,
-  set_name: dbRecord.set_name || undefined
+  set_name: dbRecord.set_name || undefined,
+  is_archived: dbRecord.is_archived || false
 });
 
 const mapAppToDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string) => ({
@@ -85,7 +44,8 @@ const mapAppToDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string) => (
   example_sentence_en: word.example_sentence.trim(),
   example_sentence_tr: word.turkish_sentence.trim(),
   user_id: userId,
-  set_name: word.set_name || null
+  set_name: word.set_name || null,
+  is_archived: word.is_archived || false
 });
 
 export const wordService = {
@@ -95,347 +55,130 @@ export const wordService = {
 
   clearCache() {
     localStorage.removeItem(LOCAL_STORAGE_KEY);
-    // Ayrıca set ilerlemelerini de temizle
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('lingua_')) {
-            localStorage.removeItem(key);
-        }
-    }
   },
 
-  // --- HESAP SIFIRLAMA (Sadece o anki kullanıcıyı siler) ---
-  async deleteAllUserData(userId: string): Promise<void> {
-    if (!isSupabaseConfigured || !supabase || !userId) return;
-
-    try {
-        // 1. Veritabanından sil
-        const { error } = await supabase
-            .from('words')
-            .delete()
-            .eq('user_id', userId);
-        
-        if (error) throw error;
-
-        // 2. Yerel önbelleği temizle
-        this.clearCache();
-        
-    } catch (e) {
-        console.error("Hesap sıfırlama hatası:", e);
-        throw e;
-    }
-  },
-
-  // --- SENKRONİZASYON FONKSİYONU ---
-  // Yerelde olup sunucuda olmayan kelimeleri bulur ve sunucuya gönderir.
-  async syncLocalToRemote(userId: string): Promise<number> {
-    if (!isSupabaseConfigured || !supabase) return 0;
-
-    try {
-        const localWords = getLocalWords();
-        if (localWords.length === 0) return 0;
-
-        // 1. Sunucudaki mevcut kelimeleri çek
-        const { data: remoteData, error } = await supabase
-            .from('words')
-            .select('word_en')
-            .eq('user_id', userId);
-        
-        if (error) throw error;
-
-        const remoteSet = new Set(remoteData?.map(w => (w.word_en || '').toLowerCase().trim()) || []);
-
-        // 2. Yereldeki kelimeleri filtrele
-        const missingWords = localWords.filter(localWord => {
-            const cleanEng = localWord.english.toLowerCase().trim();
-            
-            // --- KESİN İZOLASYON ---
-            // Eğer kelimenin bir sahibi varsa ve bu kişi şu anki kullanıcı değilse, bu kelimeyi ASLA gönderme.
-            // Bu, Mustafa'nın local storage'ında Murat'ın verisi kalsa bile sunucuya karışmasını engeller.
-            if (localWord.user_id && localWord.user_id !== userId) {
-                return false;
-            }
-
-            // Sadece user_id'si boş olan (anonim) veya zaten bu kullanıcıya ait olanları işle
-            return !remoteSet.has(cleanEng);
-        });
-
-        if (missingWords.length === 0) return 0;
-
-        console.log(`${missingWords.length} adet senkronize edilmemiş kelime bulundu, yükleniyor...`);
-
-        // 3. Eksik kelimeleri sunucu formatına çevir ve gönder
-        const payload = missingWords.map(w => mapAppToDb(w, userId));
-        
-        const { error: insertError } = await supabase.from('words').insert(payload);
-        
-        if (insertError) {
-            console.error("Senkronizasyon hatası:", insertError);
-            throw insertError;
-        }
-
-        return missingWords.length;
-    } catch (e) {
-        console.error("Sync işlemi sırasında hata:", e);
-        return 0;
-    }
-  },
-
-  // --- KELİME LİSTESİ (SADECE KELİMELER) ---
   async getAllWords(userId?: string): Promise<Word[]> {
-    const allLocal = getLocalWords();
-    
-    // Cache içindeki set verilerini (custom sets) kaybetmemek için ayıralım
-    const cachedSetWords = allLocal.filter(w => !!w.set_name);
-    
-    // Sadece vocab (kelime) olanları yerelden filtrele
-    const localVocab = allLocal.filter(w => !w.set_name);
-
     let remoteVocab: Word[] = [];
-    
     if (isSupabaseConfigured && supabase) {
       try {
-        let query = supabase
-          .from('words')
-          .select('*')
-          .is('set_name', null) // SADECE SET İSMİ OLMAYANLARI ÇEK
-          .order('created_at', { ascending: false });
-        
-        if (userId) {
-            query = query.eq('user_id', userId);
-        }
-
+        let query = supabase.from('words').select('*');
+        if (userId) query = query.eq('user_id', userId);
         const { data, error } = await query;
         if (!error && data) remoteVocab = data.map(mapDbToApp);
-      } catch (e) {
-        console.error("Supabase fetch error:", e);
-      }
+      } catch (e) { console.error(e); }
     }
     
-    const wordMap = new Map<string, Word>();
-    
-    // Önce sunucudan gelen VOCAB verilerini ekle
-    remoteVocab.forEach(w => wordMap.set(w.english.toLowerCase().trim(), w));
-    
-    // Sonra yereldeki VOCAB verilerini ekle
-    localVocab.forEach(w => {
-        const key = w.english.toLowerCase().trim();
-        
-        // --- KESİN İZOLASYON ---
-        // Eğer kullanıcı giriş yapmışsa (userId var),
-        // Yereldeki kelimenin 'user_id'si var ama şu anki kullanıcıya EŞİT DEĞİLSE, bunu listeye ALMA.
-        // Bu, Murat'ın cache'inin Mustafa'ya görünmesini engeller.
-        if (userId && w.user_id && w.user_id !== userId) {
-            return; 
-        }
-
-        if (!wordMap.has(key)) {
-            wordMap.set(key, w);
-        }
-    });
-    
-    const finalVocabList = Array.from(wordMap.values()).sort((a, b) => 
-      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    );
-
-    // Cache'i güncellerken de temizlik yapalım
-    // Sadece şu anki kullanıcıya ait (veya anonim) verileri cache'e geri yaz
-    const cleanCache = [...finalVocabList, ...cachedSetWords].filter(w => {
-        if (userId && w.user_id && w.user_id !== userId) return false;
-        return true;
-    });
-
-    setLocalWords(cleanCache);
-    
-    return finalVocabList;
+    if (remoteVocab.length > 0) setLocalWords(remoteVocab);
+    return remoteVocab.length > 0 ? remoteVocab : getLocalWords();
   },
 
-  async getCustomSetWords(userId?: string): Promise<Word[]> {
-    if (!isSupabaseConfigured || !supabase) return [];
-    try {
-      let query = supabase
-        .from('words')
-        .select('*')
-        .not('set_name', 'is', null)
-        .order('created_at', { ascending: false });
-
-      // UserId varsa filtrele
-      if (userId) {
-          query = query.eq('user_id', userId);
-      }
-        
-      const { data, error } = await query;
-      if (error) return [];
-      return data ? data.map(mapDbToApp) : [];
-    } catch (e) { return []; }
+  async toggleArchive(id: string, isArchived: boolean): Promise<void> {
+    const current = getLocalWords();
+    setLocalWords(current.map(w => w.id === id ? { ...w, is_archived: isArchived } : w));
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('words').update({ is_archived: isArchived }).eq('id', id);
+    }
   },
 
   async addWord(word: Omit<Word, 'id' | 'created_at'>, userId?: string): Promise<Word | null> {
-    const formattedWord = {
-        ...word,
-        english: formatEnglishWord(word.english),
-        turkish: formatTurkishWord(word.turkish)
-    };
-
-    const currentLocal = getLocalWords();
-    const isDuplicate = currentLocal.some(w => w.english.toLowerCase().trim() === formattedWord.english.toLowerCase().trim());
-    
-    if (isDuplicate) return null;
-
-    let finalWord: Word = {
-      ...formattedWord,
+    const finalWord: Word = {
+      ...word,
       id: crypto.randomUUID(),
       created_at: new Date().toISOString(),
-      user_id: userId
+      user_id: userId,
+      is_archived: false
     };
 
-    const updatedLocal = [finalWord, ...currentLocal];
+    const updatedLocal = [finalWord, ...getLocalWords()];
     setLocalWords(updatedLocal);
 
     if (isSupabaseConfigured && supabase && userId) {
       try {
-        const payload = mapAppToDb(formattedWord, userId);
+        const payload = mapAppToDb(finalWord, userId);
         const { data, error } = await supabase.from('words').insert([payload]).select().single();
         if (!error && data) {
             const dbWord = mapDbToApp(data);
-            setLocalWords(updatedLocal.map(w => w.id === finalWord.id ? dbWord : w));
+            // Update local ID with real DB ID if needed, usually UUID matches but consistent data is better
+            const refreshedLocal = updatedLocal.map(w => w.id === finalWord.id ? dbWord : w);
+            setLocalWords(refreshedLocal);
             return dbWord;
         }
-      } catch (e) {
-        console.error("Supabase insert error, kept local only");
-      }
+      } catch (e) { console.error(e); }
     } 
-
     return finalWord;
   },
 
-  async bulkAddWords(wordsToAdd: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<number> {
-    if (wordsToAdd.length === 0) return 0;
-    
-    const formattedWordsToAdd = wordsToAdd.map(w => ({
+  // PERFORMANS ÇÖZÜMÜ: Toplu Ekleme Fonksiyonu
+  async addWordsBulk(words: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<Word[]> {
+    if (words.length === 0) return [];
+
+    // 1. Frontend için geçici nesneleri oluştur (Tek seferde)
+    const newWords: Word[] = words.map(w => ({
         ...w,
-        english: formatEnglishWord(w.english),
-        turkish: formatTurkishWord(w.turkish)
+        id: crypto.randomUUID(),
+        created_at: new Date().toISOString(),
+        user_id: userId,
+        is_archived: false
     }));
 
+    // 2. LocalStorage'ı TEK SEFERDE güncelle (IO darboğazını önler)
     const currentWords = getLocalWords();
-    const existingEnglish = new Set(currentWords.map(w => w.english.toLowerCase().trim()));
-    
-    const newWords = formattedWordsToAdd.filter(w => !existingEnglish.has(w.english.toLowerCase().trim()));
-    
-    if (newWords.length === 0) return 0;
-
-    const wordsWithIds = newWords.map(w => ({
-      ...w,
-      id: crypto.randomUUID(),
-      created_at: new Date().toISOString(),
-      user_id: userId
-    }));
-
-    const updatedLocal = [...wordsWithIds, ...currentWords];
+    const updatedLocal = [...newWords, ...currentWords];
     setLocalWords(updatedLocal);
 
+    // 3. Supabase'e TEK SEFERDE (Bulk Insert) gönder
     if (isSupabaseConfigured && supabase && userId) {
-      try {
-          const payload = newWords.map(w => mapAppToDb(w, userId));
-          await supabase.from('words').insert(payload);
-      } catch (e) {
-          console.error("Supabase bulk insert error");
-      }
+        try {
+            const payload = newWords.map(w => mapAppToDb(w, userId));
+            // Supabase bulk insert
+            const { data, error } = await supabase.from('words').insert(payload).select();
+            
+            if (!error && data) {
+                // DB'den dönen gerçek verilerle local veriyi senkronize et (ID değişimi vs için)
+                const dbWords = data.map(mapDbToApp);
+                
+                // DB'den gelenleri ve önceden var olanları birleştir
+                // (Geçici eklediklerimizi silip yerine gerçeklerini koyuyoruz gibi düşünebiliriz ama
+                // en temizi listenin başına DB'den gelenleri koymaktır)
+                const finalLocal = [...dbWords, ...currentWords];
+                setLocalWords(finalLocal);
+                return dbWords;
+            }
+        } catch (e) { 
+            console.error("Bulk insert error:", e); 
+        }
     }
 
-    return wordsWithIds.length;
-  },
-
-  async addCustomSetItems(items: Omit<Word, 'id' | 'created_at'>[], setName: string, userId?: string): Promise<number> {
-     if (!isSupabaseConfigured || !supabase || items.length === 0) return 0;
-     try {
-       // Sadece 'word_en' ve 'set_name' ile kontrol et
-       const { data: existingSetData } = await supabase
-         .from('words')
-         .select('word_en') 
-         .eq('set_name', setName)
-         .eq('user_id', userId); // UserId kontrolü eklendi
-
-       const existingSetWords = new Set(existingSetData?.map((w: any) => (w.word_en || '').toLowerCase().trim()) || []);
-       
-       const formattedItems = items.map(item => ({
-            ...item,
-            english: formatEnglishWord(item.english),
-            turkish: formatTurkishWord(item.turkish),
-            set_name: setName
-       }));
-
-       const itemsToInsert = formattedItems.filter(item => 
-           !existingSetWords.has(item.english.toLowerCase().trim())
-       );
-
-       if (itemsToInsert.length > 0) {
-           const payload = itemsToInsert.map(item => mapAppToDb(item, userId));
-           
-           const { error: insertError } = await supabase.from('words').insert(payload); 
-           if (insertError) throw insertError;
-           return payload.length;
-       }
-       return 0;
-     } catch (error: any) {
-       console.error("Custom set add error:", error.message || error);
-       throw error;
-     }
-  },
-
-  // --- Yeni Kullanıcı Başlatma Fonksiyonu (Güçlendirilmiş) ---
-  async initializeDefaults(userId: string): Promise<void> {
-    if (!isSupabaseConfigured || !supabase) return;
-    
-    try {
-      // 1. Önce am-is-are setini kontrol et
-      const { data: currentSetWords, error: setError } = await supabase
-        .from('words')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('set_name', 'am-is-are');
-
-      if (setError) {
-          console.error("Set kontrol hatası:", setError);
-      }
-
-      // Eğer set yoksa veya eksikse EKLE
-      if (!currentSetWords || currentSetWords.length < DEFAULT_SENTENCE_SET.length) {
-        console.log("Varsayılan cümle seti eksik, ekleniyor...");
-        await this.addCustomSetItems(DEFAULT_SENTENCE_SET, 'am-is-are', userId);
-      } else {
-        console.log("am-is-are seti hazır.");
-      }
-
-      // 2. Varsayılan kelimeleri kontrol et
-      const { count } = await supabase.from('words').select('*', { count: 'exact', head: true }).eq('user_id', userId);
-      if (count === 0) {
-         console.log("Kullanıcı yeni, varsayılan kelimeler ekleniyor...");
-         await this.bulkAddWords(DEFAULT_VOCAB, userId);
-      }
-
-    } catch (e: any) {
-      console.error("Varsayılan veriler yüklenirken hata:", e.message || e);
-    }
+    return newWords;
   },
 
   async deleteWord(id: string): Promise<void> {
-    const current = getLocalWords();
-    setLocalWords(current.filter(w => w.id !== id));
+    setLocalWords(getLocalWords().filter(w => w.id !== id));
     if (isSupabaseConfigured && supabase) {
       await supabase.from('words').delete().eq('id', id);
     }
   },
 
-  async deleteCustomSet(setName: string): Promise<void> {
-      if (!isSupabaseConfigured || !supabase) return;
-      await supabase.from('words').delete().eq('set_name', setName);
+  async deleteWords(ids: string[]): Promise<void> {
+    const currentWords = getLocalWords();
+    setLocalWords(currentWords.filter(w => !ids.includes(w.id)));
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('words').delete().in('id', ids);
+    }
   },
 
   async renameCustomSet(oldName: string, newName: string): Promise<void> {
-      if (!isSupabaseConfigured || !supabase) return;
-      const { error } = await supabase.from('words').update({ set_name: newName }).eq('set_name', oldName);
-      if (error) throw error;
+    const current = getLocalWords();
+    setLocalWords(current.map(w => w.set_name === oldName ? { ...w, set_name: newName } : w));
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('words').update({ set_name: newName }).eq('set_name', oldName);
+    }
+  },
+
+  async deleteCustomSet(setName: string): Promise<void> {
+    setLocalWords(getLocalWords().filter(w => w.set_name !== setName));
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('words').delete().eq('set_name', setName);
+    }
   }
 };

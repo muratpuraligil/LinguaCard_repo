@@ -1,44 +1,154 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppMode, Word } from './types';
-import { supabase, wordService } from './services/supabaseClient';
+import { wordService, supabase } from './services/supabaseClient';
 import { extractWordsFromImage } from './services/geminiService';
 import FlashcardMode from './components/FlashcardMode';
 import QuizMode from './components/QuizMode';
 import SentenceMode from './components/SentenceMode';
-import CustomSetStudyMode from './components/CustomSetStudyMode';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
-import DeleteModal from './components/DeleteModal';
-import SentenceModeSelectionModal from './components/SentenceModeSelectionModal';
-import CustomSetManager from './components/CustomSetManager';
+import ArchiveView from './components/ArchiveView';
 import Auth from './components/Auth';
+import DeleteModal from './components/DeleteModal';
 import { PulseLoader } from './components/Loader';
-import { CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { CheckCircle2, X, AlertTriangle } from 'lucide-react';
 
 interface Toast {
   message: string;
   type: 'success' | 'error' | 'warning';
 }
 
+// 🚀 PERFORMANS ÇÖZÜMÜ: Inline Web Worker + Optimized Base64
+// Donmayı önlemek için Base64 dönüşümü ve temizliği worker içinde yapılıyor.
+const WORKER_CODE = `
+self.onmessage = async (e) => {
+  const file = e.data;
+
+  try {
+    // 1. Görseli Bitmap olarak decode et
+    const bitmap = await createImageBitmap(file);
+    
+    // 2. Boyut Hesaplama (Tamsayı garantisi ile)
+    let { width, height } = bitmap;
+    const MAX_DIMENSION = 1024; // Kalite için biraz artırdık, performans hala iyi olur
+
+    if (width > height) {
+      if (width > MAX_DIMENSION) {
+        height = Math.floor(height * (MAX_DIMENSION / width));
+        width = MAX_DIMENSION;
+      }
+    } else {
+      if (height > MAX_DIMENSION) {
+        width = Math.floor(width * (MAX_DIMENSION / height));
+        height = MAX_DIMENSION;
+      }
+    }
+
+    // 3. OffscreenCanvas Kontrolü ve Çizim
+    if (typeof OffscreenCanvas === 'undefined') {
+        throw new Error("Tarayıcınız bu işlemi desteklemiyor.");
+    }
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error("Worker: Canvas context oluşturulamadı.");
+    }
+
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    // 4. Blob Oluşturma
+    const blob = await canvas.convertToBlob({
+      type: 'image/jpeg',
+      quality: 0.6 // %60 kalite yeterli, boyutu düşürür hızlandırır
+    });
+
+    // 5. Base64 Dönüşümü ve Header Temizliği (Worker İçinde)
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onloadend = () => {
+        const result = reader.result;
+        if (typeof result === 'string') {
+            // "data:image/jpeg;base64," kısmını burada atıyoruz
+            // Ana thread'e daha az veri gider, split işlemi ana thread'i yormaz.
+            const base64Raw = result.split(',')[1] || result;
+            self.postMessage({ success: true, data: base64Raw });
+        } else {
+            self.postMessage({ success: false, error: "Base64 oluşturulamadı" });
+        }
+    };
+    reader.onerror = () => {
+        self.postMessage({ success: false, error: "Blob okunamadı" });
+    };
+
+  } catch (error) {
+    console.error("Worker Hatası:", error);
+    self.postMessage({ success: false, error: error.message || "Bilinmeyen worker hatası" });
+  }
+};
+`;
+
+const processImageWithWorker = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    // 1. Worker Kurulumu
+    const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    const worker = new Worker(workerUrl);
+
+    // 2. Zaman Aşımı Koruması (20 Saniye)
+    // Eğer worker veya tarayıcı takılırsa, uygulamayı sonsuz döngüden kurtarır.
+    const timeoutId = setTimeout(() => {
+        worker.terminate();
+        URL.revokeObjectURL(workerUrl);
+        reject(new Error("İşlem zaman aşımına uğradı. Görsel çok büyük olabilir."));
+    }, 20000);
+
+    // 3. Mesaj Dinleme
+    worker.onmessage = (e: MessageEvent) => {
+      clearTimeout(timeoutId); // İşlem başarılı, sayacı durdur
+      const { success, data, error } = e.data;
+      
+      if (success && data) {
+        resolve(data as string);
+      } else {
+        reject(new Error(error || "Görsel işlenirken hata oluştu."));
+      }
+
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl); // Bellek temizliği
+    };
+
+    // 4. Hata Dinleme
+    worker.onerror = (err: ErrorEvent) => {
+      clearTimeout(timeoutId);
+      console.error("Worker Error:", err);
+      reject(new Error("Görsel işleme servisi başlatılamadı."));
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+    };
+
+    // 5. Başlat
+    worker.postMessage(file);
+  });
+};
+
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
-  const [words, setWords] = useState<Word[]>(() => wordService.getCachedWords());
-  const [customSetWords, setCustomSetWords] = useState<Word[]>([]);
+  const [words, setWords] = useState<Word[]>([]);
   const [mode, setMode] = useState<AppMode>(AppMode.HOME);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showSentenceSelectModal, setShowSentenceSelectModal] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
-  const [studySet, setStudySet] = useState<Word[]>([]);
-  const [importLoading, setImportLoading] = useState(false);
-  const [activeSetName, setActiveSetName] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const [wordToDelete, setWordToDelete] = useState<string | null>(null);
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
 
-  // Flashcard sayfalama (pagination) state'i
-  const [flashcardOffset, setFlashcardOffset] = useState(0);
+  const [flashcardOffset, setFlashcardOffset] = useState(() => {
+    const saved = localStorage.getItem('lingua_global_offset');
+    return saved ? parseInt(saved) : 0;
+  });
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
     setToast({ message, type });
@@ -46,349 +156,283 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Başlangıç fonksiyonunu tanımla
     const initializeApp = async () => {
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 8000));
+      
+      try {
         if (!supabase) {
-            setLoadingSession(false);
-            return;
+          setLoadingSession(false);
+          return;
         }
 
-        try {
-            // 1. Oturumu al
-            const { data: { session }, error } = await supabase.auth.getSession();
+        const loadData = async () => {
+            const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError) throw sessionError;
             
-            if (error) throw error;
+            setSession(currentSession);
             
-            setSession(session);
-
-            if (session) { 
-                // 2. ÖNCE Yerel verileri sunucuya senkronize et (Eksik verileri tamamla)
-                await wordService.syncLocalToRemote(session.user.id);
-
-                // 3. Ardından güncel verileri çek ve varsayılanları kontrol et
-                await Promise.allSettled([
-                    wordService.initializeDefaults(session.user.id),
-                    loadWords(session.user.id),
-                    loadCustomSets(session.user.id)
-                ]);
+            if (currentSession) {
+              const allWords = await wordService.getAllWords(currentSession.user.id);
+              setWords(allWords || []);
             }
-        } catch (error) {
-            console.error("Uygulama başlatma hatası:", error);
-            // Hata olsa bile kullanıcıya bir şey göstermek için devam ediyoruz.
-        } finally {
-            // 4. Her durumda (başarılı veya hatalı) yükleme ekranını kapat
-            setLoadingSession(false);
-        }
-    };
+        };
 
-    // Başlat
+        await Promise.race([loadData(), timeoutPromise]);
+
+      } catch (e: any) {
+        if (e.message !== "TIMEOUT") {
+            console.error("Uygulama başlatılamadı:", e);
+        } else {
+            console.warn("Oturum kontrolü uzun sürdü, devam ediliyor...");
+        }
+      } finally {
+        setLoadingSession(false);
+      }
+    };
     initializeApp();
 
-    // Auth durum değişikliklerini dinle
-    const { data: { subscription } } = supabase?.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session) { 
-          // Giriş yapıldığında verileri tazele (arkaplanda)
-          // Giriş anında da senkronizasyon dene
-          wordService.syncLocalToRemote(session.user.id)
-            .then(() => wordService.initializeDefaults(session.user.id))
-            .then(() => { loadWords(session.user.id); loadCustomSets(session.user.id); })
-            .catch(console.error);
-      } else { 
-          setWords([]); 
-          setCustomSetWords([]); 
-          wordService.clearCache(); // Oturum kapandığında cache'i temizle
+    const { data: { subscription } } = supabase?.auth.onAuthStateChange(async (_event, newSession) => {
+      setSession(newSession);
+      if (newSession) {
+        try {
+          const allWords = await wordService.getAllWords(newSession.user.id);
+          setWords(allWords || []);
+        } catch (e) {
+          console.error("Kelime yükleme hatası:", e);
+        }
+      } else {
+        setWords([]);
+        wordService.clearCache();
       }
     }) || { data: { subscription: { unsubscribe: () => {} } } };
-
+    
     return () => subscription.unsubscribe();
   }, []);
 
-  const loadWords = async (userId?: string) => {
-    const data = await wordService.getAllWords(userId);
-    setWords(data);
-  };
+  const displayWords = words
+    .filter(w => !w.is_archived && !w.set_name)
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
-  const loadCustomSets = async (userId?: string) => {
-      const data = await wordService.getCustomSetWords(userId);
-      setCustomSetWords(data);
-  };
+  const archivedWords = words.filter(w => w.is_archived === true);
 
-  const handleAddWord = async (english: string, turkish: string, example: string, turkish_sentence: string): Promise<boolean> => {
-    try {
-      const userId = session?.user?.id;
-      const newWord = await wordService.addWord({ english, turkish, example_sentence: example, turkish_sentence: turkish_sentence }, userId);
-      if (newWord) {
-        setWords(prev => [newWord, ...prev]);
-        showToast("Kelime başarıyla eklendi.");
-        return true;
-      }
-      return false;
-    } catch (e) { return false; }
-  };
-
-  const handleResetAccount = async () => {
-      if (!session?.user?.id) return;
-      try {
-          setLoadingSession(true);
-          await wordService.deleteAllUserData(session.user.id);
-          
-          // Verileri sıfırla ve varsayılanları tekrar yükle
-          setWords([]);
-          setCustomSetWords([]);
-          
-          await wordService.initializeDefaults(session.user.id);
-          await loadWords(session.user.id);
-          await loadCustomSets(session.user.id);
-          
-          showToast("Hesap başarıyla sıfırlandı ve varsayılan veriler yüklendi.");
-      } catch (error) {
-          console.error(error);
-          showToast("Sıfırlama sırasında hata oluştu.", "error");
-      } finally {
-          setLoadingSession(false);
-      }
-  };
-
-  const confirmDelete = async () => {
-    if (wordToDelete) {
-      await wordService.deleteWord(wordToDelete);
-      setWords(prev => prev.filter(w => w.id !== wordToDelete));
-      setWordToDelete(null);
-      showToast("Kelime silindi.");
-    }
-    if (dateToDelete) {
-        const formatDate = (dStr: string) => new Date(dStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'numeric', year: 'numeric' });
-        const wordsToDelete = words.filter(w => formatDate(w.created_at || '') === dateToDelete);
-        for (const w of wordsToDelete) { await wordService.deleteWord(w.id); }
-        setWords(prev => prev.filter(w => formatDate(w.created_at || '') !== dateToDelete));
-        setDateToDelete(null);
-        showToast("Seçili tarihteki kelimeler silindi.");
-    }
-  };
-
-  // Flashcard Modundayken kelime silme (Bildim olarak işaretleme)
-  const handleRemoveWordFromStudy = async (id: string) => {
-      try {
-          // 1. DB'den sil
-          await wordService.deleteWord(id);
-          
-          // 2. Ana listeden sil
-          setWords(prev => prev.filter(w => w.id !== id));
-          
-          // 3. Çalışma setinden sil (Anlık UI güncellemesi için)
-          setStudySet(prev => prev.filter(w => w.id !== id));
-
-          showToast("Kelime listeden kaldırıldı (Öğrenildi).");
-      } catch (e) {
-          showToast("Silme işlemi başarısız.", "error");
-      }
+  const getSequentialSet = () => {
+      const sortedActive = words
+        .filter(w => !w.is_archived && !w.set_name)
+        .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+      return sortedActive.slice(flashcardOffset, flashcardOffset + 20);
   };
 
   const handleNextFlashcardSet = () => {
       const nextOffset = flashcardOffset + 20;
-      
-      // Eğer sonraki set listenin dışına taşıyorsa başa dön veya kalanları göster
-      if (nextOffset >= words.length) {
+      const totalActiveCount = words.filter(w => !w.is_archived && !w.set_name).length;
+      if (nextOffset >= totalActiveCount) {
           setFlashcardOffset(0);
-          const newSet = words.slice(0, 20);
-          setStudySet(newSet);
-          showToast("Liste bitti, başa dönüldü.", "warning");
+          localStorage.setItem('lingua_global_offset', '0');
+          showToast("Tüm listeyi tamamladınız, başa dönülüyor.");
       } else {
           setFlashcardOffset(nextOffset);
-          const newSet = words.slice(nextOffset, nextOffset + 20);
-          setStudySet(newSet);
+          localStorage.setItem('lingua_global_offset', nextOffset.toString());
+          showToast("Bir sonraki 20'li sete geçildi.");
       }
-      
-      // Her yeni sete geçişte index'i sıfırla
-      localStorage.setItem('lingua_flashcard_index', '0');
   };
 
-  const handleImageFileProcess = (file: File) => {
-    if (!file) return;
+  const handleArchiveWord = async (id: string) => {
+    setWords(prev => prev.map(w => w.id === id ? { ...w, is_archived: true } : w));
+    await wordService.toggleArchive(id, true);
+    showToast("Kelime öğrenildi ve arşive kaldırıldı.");
+  };
+
+  const handleRestoreWord = async (id: string) => {
+    setWords(prev => prev.map(w => w.id === id ? { ...w, is_archived: false } : w));
+    await wordService.toggleArchive(id, false);
+    showToast("Kelime tekrar listeye eklendi.");
+  };
+
+  const handleAddWord = async (english: string, turkish: string, example: string, turkish_sentence: string): Promise<boolean> => {
+    try {
+      const newWord = await wordService.addWord({ english, turkish, example_sentence: example, turkish_sentence: turkish_sentence }, session?.user?.id);
+      if (newWord) {
+        setWords(prev => [newWord, ...prev]);
+        showToast("Kelime eklendi.");
+        return true;
+      }
+    } catch (e) {
+      console.error("Ekleme hatası:", e);
+    }
+    return false;
+  };
+
+  const handleImageAnalysis = async (file: File) => {
     setOcrLoading(true);
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const base64 = evt.target?.result as string;
+
+    try {
+      // 1. ADIM: Web Worker ile Arka Planda İşle (Donma Yok, Timeout Korumalı)
+      // Worker artık doğrudan raw base64 string döndürüyor, 'data:...' prefix yok.
+      const rawBase64 = await processImageWithWorker(file);
+
+      // 2. ADIM: AI Analizi
+      // Gemini servisine raw base64 gönderiyoruz.
+      const extracted = await extractWordsFromImage(rawBase64, 'image/jpeg');
+      
+      if (!extracted || extracted.length === 0) {
+        showToast("Görselde okunabilir kelime bulunamadı.", "warning");
+        setShowUploadModal(false);
+        return;
+      }
+
+      // 3. ADIM: Veritabanına Kayıt
+      const wordsToAdd = extracted.map(item => ({
+          english: item.english,
+          turkish: item.turkish,
+          example_sentence: item.example_sentence,
+          turkish_sentence: item.turkish_sentence
+      }));
+
+      const addedWords = await wordService.addWordsBulk(wordsToAdd, session?.user?.id);
+      
+      if (addedWords.length > 0) {
+        setWords(prev => [...addedWords, ...prev]);
+        showToast(`${addedWords.length} yeni kelime eklendi!`);
+      } else {
+        showToast("Kelimeler veritabanına kaydedilemedi.", "error");
+      }
+      
+      setShowUploadModal(false);
+    } catch (err: any) {
+      console.error("Analiz Hatası:", err);
+      // Hata mesajını kullanıcı dostu hale getir
+      let msg = err.message || "Bilinmeyen hata";
+      if (msg.includes("zaman aşımına")) msg = "Görsel çok büyük veya işlem çok uzun sürdü.";
+      else if (msg === "QUOTA_EXCEEDED") msg = "AI kotası doldu, lütfen biraz bekleyin.";
+      
+      showToast("İşlem başarısız: " + msg, "error");
+      setShowUploadModal(false);
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
+  const confirmDeleteWord = (id: string) => {
+    setWordToDelete(id);
+  };
+
+  const handleDeleteConfirmed = async () => {
+    if (wordToDelete) {
+      const id = wordToDelete;
+      setWords(prev => prev.filter(w => w.id !== id));
+      setWordToDelete(null);
+      
       try {
-        const extracted = await extractWordsFromImage(base64, file.type);
-        if (extracted && extracted.length > 0) {
-          if (activeSetName) {
-             const added = await wordService.addCustomSetItems(extracted, activeSetName, session?.user?.id);
-             await loadCustomSets(session?.user?.id);
-             showToast(`${added} yeni cümle seti eklendi!`);
-          } else {
-             const addedCount = await wordService.bulkAddWords(extracted, session?.user?.id);
-             await loadWords(session?.user?.id);
-             showToast(`${addedCount} yeni kelime eklendi!`);
-          }
-          setShowUploadModal(false);
-        } else { showToast("Görselde işlenecek metin bulunamadı.", "warning"); }
-      } catch (error: any) {
-        console.error("OCR Hatası:", error.message);
-        if (error.message === "QUOTA_EXCEEDED") {
-            showToast("Kullanım sınırına ulaşıldı, lütfen biraz bekleyin. Şimdilik manuel ekleme ile devam edebilirsiniz.", "error");
-        } else {
-            showToast(error.message, "error");
-        }
-      } finally { setOcrLoading(false); }
-    };
-    reader.readAsDataURL(file);
+        await wordService.deleteWord(id);
+        showToast("Kelime silindi.", "warning");
+      } catch (e) {
+        console.error("Silme hatası:", e);
+        showToast("Silme işlemi başarısız.", "error");
+      }
+    }
+  };
+
+  const confirmDeleteDate = (date: string) => {
+    setDateToDelete(date);
+  };
+
+  const handleDeleteDateConfirmed = async () => {
+    if (dateToDelete) {
+      const dateStr = dateToDelete;
+      const wordsToDelete = words.filter(w => {
+          const wDate = new Date(w.created_at || 0).toLocaleDateString('tr-TR', { day: 'numeric', month: 'numeric', year: 'numeric' });
+          return wDate === dateStr;
+      });
+      const ids = wordsToDelete.map(w => w.id);
+      
+      setWords(prev => prev.filter(w => !ids.includes(w.id)));
+      setDateToDelete(null);
+
+      try {
+        await wordService.deleteWords(ids);
+        showToast(`${ids.length} kelime silindi.`, "warning");
+      } catch (e) {
+        console.error("Toplu silme hatası:", e);
+        showToast("Toplu silme başarısız.", "error");
+      }
+    }
   };
 
   if (loadingSession) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-black relative">
-        <PulseLoader />
-        <p className="text-blue-500 font-black tracking-widest text-xs uppercase mt-8 animate-pulse">LinguaCard Başlatılıyor</p>
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+      <PulseLoader />
+      <p className="text-slate-500 font-bold mt-8 animate-pulse text-sm uppercase tracking-widest">Oturum Açılıyor...</p>
     </div>
   );
-
+  
   if (!session) return <Auth />;
 
   return (
-    <div className="bg-black min-h-screen text-white font-['Plus_Jakarta_Sans']">
+    <div className="bg-black min-h-screen text-white font['Plus_Jakarta_Sans']">
         {toast && (
           <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[10001] animate-fadeIn w-full max-w-lg px-4">
             <div className={`flex items-center gap-3 px-6 py-4 rounded-3xl border shadow-2xl backdrop-blur-xl ${
-                toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 
-                toast.type === 'warning' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                'bg-red-500/10 border-red-500/20 text-red-400'
-            }`}>
-              {toast.type === 'success' ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
+              toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 
+              toast.type === 'warning' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 
+              'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+              {toast.type === 'error' ? <AlertTriangle size={24} /> : <CheckCircle2 size={24} />}
               <span className="font-black text-sm flex-1">{toast.message}</span>
               <button onClick={() => setToast(null)} className="p-1 rounded-lg hover:bg-white/10"><X size={16} /></button>
             </div>
           </div>
         )}
 
-        {importLoading && (
-             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex flex-col items-center justify-center">
-                 <PulseLoader />
-                 <h2 className="text-2xl font-black text-white mt-8">Excel İşleniyor</h2>
-             </div>
-        )}
-
-        {mode === AppMode.FLASHCARDS && (
-            <FlashcardMode 
-                words={studySet} 
-                onExit={() => setMode(AppMode.HOME)} 
-                onNextSet={handleNextFlashcardSet}
-                onRemoveWord={handleRemoveWordFromStudy}
-            />
-        )}
-        {mode === AppMode.QUIZ && <QuizMode words={studySet} allWords={words} onExit={() => setMode(AppMode.HOME)} />}
-        {mode === AppMode.SENTENCES && <SentenceMode words={studySet} onExit={() => setMode(AppMode.HOME)} />}
-        {mode === AppMode.CUSTOM_SET_STUDY && <CustomSetStudyMode words={studySet} onExit={() => setMode(AppMode.CUSTOM_SETS)} />}
+        {mode === AppMode.FLASHCARDS && <FlashcardMode words={getSequentialSet()} onExit={() => setMode(AppMode.HOME)} onNextSet={handleNextFlashcardSet} onRemoveWord={handleArchiveWord} />}
+        {mode === AppMode.QUIZ && <QuizMode words={getSequentialSet()} allWords={words.filter(w => !w.is_archived)} onExit={() => setMode(AppMode.HOME)} />}
+        {mode === AppMode.SENTENCES && <SentenceMode words={getSequentialSet()} onExit={() => setMode(AppMode.HOME)} />}
+        {mode === AppMode.ARCHIVE && <ArchiveView words={archivedWords} onExit={() => setMode(AppMode.HOME)} onRestore={handleRestoreWord} />}
         
-        {mode === AppMode.CUSTOM_SETS && (
-            <CustomSetManager 
-                words={customSetWords} 
-                onExit={() => setMode(AppMode.HOME)} 
-                onUploadNewSet={set => { setActiveSetName(set); setShowUploadModal(true); }}
-                onRefresh={async () => { await loadCustomSets(session?.user?.id); }}
-                onRenameCustomSetLocally={(old, name) => setCustomSetWords(prev => prev.map(w => w.set_name === old ? {...w, set_name: name} : w))}
-                onPlaySet={set => { setStudySet(set); setMode(AppMode.CUSTOM_SET_STUDY); }}
-            />
-        )}
-
         {mode === AppMode.HOME && (
-          <>
             <Dashboard 
-                userEmail={session.user.email} words={words} onModeSelect={mode => {
-                    if (mode === AppMode.SENTENCES) {
-                        setShowSentenceSelectModal(true);
-                    } else if (mode === AppMode.FLASHCARDS) {
-                        // Flashcards için özel mantık: Pagination (Sıralı Dağılım)
-                        // Rastgele seçim YERİNE, offset kullanarak sıradaki 20 kelimeyi alıyoruz.
-                        const currentSet = words.slice(flashcardOffset, flashcardOffset + 20);
-                        setStudySet(currentSet);
-                        setMode(mode);
-                    } else { 
-                        // Quiz Modu için özel Resume mantığı
-                        if (mode === AppMode.QUIZ) {
-                            const savedSetString = localStorage.getItem('lingua_active_set');
-                            const savedIndex = localStorage.getItem('lingua_quiz_index');
-                            // Eğer kayıtlı bir set ve bitmemiş bir index varsa onu yükle
-                            if (savedSetString && savedIndex) {
-                                setStudySet(JSON.parse(savedSetString));
-                                setMode(mode);
-                                return;
-                            }
-                        }
-
-                        // Diğer modlar için (Quiz vb.) şimdilik rastgele kalabilir veya değiştirilebilir
-                        const newSet = [...words].sort(() => 0.5 - Math.random()).slice(0, 20);
-                        setStudySet(newSet);
-                        
-                        // Seti kaydet
-                        localStorage.setItem('lingua_active_set', JSON.stringify(newSet));
-                        // Eğer Quiz ise index'i sıfırla
-                        if (mode === AppMode.QUIZ) localStorage.setItem('lingua_quiz_index', '0');
-
-                        setMode(mode); 
+                userEmail={session.user.email} 
+                words={displayWords} 
+                onModeSelect={m => {
+                    if (m === AppMode.ARCHIVE) setMode(m);
+                    else {
+                        const set = getSequentialSet();
+                        if (set.length === 0) showToast("Önce listeye kelime eklemelisiniz.", "error");
+                        else { setMode(m); }
                     }
                 }}
-                onAddWord={handleAddWord} onDeleteWord={id => setWordToDelete(id)} onDeleteByDate={d => setDateToDelete(d)}
-                onLogout={async () => { 
-                    await supabase!.auth.signOut(); 
-                    setSession(null); 
-                    wordService.clearCache(); // Logout olunca cache temizle
-                    setWords([]);
-                }}
-                onResetAccount={handleResetAccount} // Reset fonksiyonu bağlandı
-                onOpenUpload={() => { setActiveSetName(null); setShowUploadModal(true); }}
-                onQuickAdd={() => {
-                    const btn = document.getElementById('force-open-add-word');
-                    if (btn) btn.click();
-                }}
+                onAddWord={handleAddWord} 
+                onDeleteWord={confirmDeleteWord} 
+                onDeleteByDate={confirmDeleteDate}
+                onLogout={async () => { try { await supabase!.auth.signOut(); } catch (e) {} }}
+                onOpenUpload={() => setShowUploadModal(true)}
+                onQuickAdd={() => { document.getElementById('force-open-add-word')?.click(); }}
+                onResetAccount={() => {}} 
             />
-            
-            {showSentenceSelectModal && (
-                <SentenceModeSelectionModal 
-                    onClose={() => setShowSentenceSelectModal(false)} 
-                    onSelectStandard={() => { 
-                        setShowSentenceSelectModal(false); 
-                        
-                        // Cümle Modu Resume Mantığı
-                        const savedSetString = localStorage.getItem('lingua_active_sentence_set');
-                        const savedIndex = localStorage.getItem('lingua_sentence_index');
-                        
-                        // Kayıtlı set varsa yükle
-                        if (savedSetString && savedIndex) {
-                             setStudySet(JSON.parse(savedSetString));
-                        } else {
-                             // Yoksa yeni oluştur
-                             const validWords = words.filter(w => w.example_sentence && w.example_sentence.length > 3);
-                             const newSet = [...validWords].sort(() => 0.5 - Math.random()).slice(0, 20);
-                             
-                             setStudySet(newSet);
-                             localStorage.setItem('lingua_active_sentence_set', JSON.stringify(newSet));
-                             localStorage.setItem('lingua_sentence_index', '0');
-                        }
-                        
-                        setMode(AppMode.SENTENCES); 
-                    }} 
-                    onSelectCustom={() => { 
-                        setShowSentenceSelectModal(false); 
-                        setMode(AppMode.CUSTOM_SETS); 
-                    }} 
-                />
-            )}
-            {(wordToDelete || dateToDelete) && (
-                <DeleteModal 
-                    onConfirm={confirmDelete} 
-                    onCancel={() => { setWordToDelete(null); setDateToDelete(null); }} 
-                    description={dateToDelete 
-                        ? "Seçilen tarihte yüklenen kartlar silinecektir onaylıyor musunuz?" 
-                        : "Bu kelimeyi silmek istediğine emin misin? Bu işlem geri alınamaz."
-                    }
-                />
-            )}
-          </>
         )}
 
-        {/* Upload Modal artık her modda çalışması için ana kapsayıcıya taşındı */}
-        {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onFileSelect={handleImageFileProcess} isLoading={ocrLoading} />}
+        {showUploadModal && (
+          <UploadModal 
+            onClose={() => setShowUploadModal(false)} 
+            onFileSelect={handleImageAnalysis} 
+            isLoading={ocrLoading} 
+            showToast={showToast} 
+          />
+        )}
+        
+        {wordToDelete && (
+          <DeleteModal 
+            onConfirm={handleDeleteConfirmed} 
+            onCancel={() => setWordToDelete(null)} 
+          />
+        )}
+
+        {dateToDelete && (
+          <DeleteModal 
+            title="Bu Tarihi Sil?"
+            description={`"${dateToDelete}" tarihinde eklenen kelimeler silinecek. Emin misin?`}
+            onConfirm={handleDeleteDateConfirmed} 
+            onCancel={() => setDateToDelete(null)} 
+          />
+        )}
     </div>
   );
 }

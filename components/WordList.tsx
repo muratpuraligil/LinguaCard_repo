@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Word } from '../types';
-import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle, Languages, X, Layers } from 'lucide-react';
+import { Search, Volume2, Trash2, Plus, Sparkles, Image, Calendar, AlertCircle, Languages, X, Layers, MessageSquareQuote } from 'lucide-react';
 
 interface WordListProps {
   words: Word[];
@@ -15,16 +15,15 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   
-  // Form States
   const [newEng, setNewEng] = useState('');
   const [newTr, setNewTr] = useState('');
-  const [newEx, setNewEx] = useState('');      // İngilizce Cümle
-  const [newTrEx, setNewTrEx] = useState('');  // Türkçe Cümle (YENİ)
+  const [newEx, setNewEx] = useState('');
+  const [newTrEx, setNewTrEx] = useState('');
   
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Hangi kelimenin cümlesinin çevrildiğini tutar
+
+  // Çevirisi açık olan cümlenin ID'si
   const [flippedSentenceId, setFlippedSentenceId] = useState<string | null>(null);
 
   const filteredWords = words.filter(w => 
@@ -39,15 +38,24 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
     window.speechSynthesis.speak(u);
   };
 
+  const handleSentenceClick = (id: string) => {
+      if (flippedSentenceId === id) {
+          setFlippedSentenceId(null);
+      } else {
+          setFlippedSentenceId(id);
+          // 3 saniye sonra otomatik kapat
+          setTimeout(() => {
+              setFlippedSentenceId(prev => prev === id ? null : prev);
+          }, 3500);
+      }
+  };
+
   const handleForceOpen = () => {
       setIsAdding(true);
       setFormError(null);
-      // Scroll mantığı: Render edildikten sonra kaydır
       setTimeout(() => {
           const formElement = document.getElementById('add-word-form-container');
-          if (formElement) {
-              formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+          if (formElement) formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 100);
   };
 
@@ -55,56 +63,25 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
     e.preventDefault();
     setFormError(null);
     setIsSubmitting(true);
-
-    // Yeni parametreyi de gönderiyoruz
     const success = await onAdd(newEng, newTr, newEx, newTrEx);
-
     setIsSubmitting(false);
-
     if (success) {
-        setNewEng('');
-        setNewTr('');
-        setNewEx('');
-        setNewTrEx(''); // Temizle
+        setNewEng(''); setNewTr(''); setNewEx(''); setNewTrEx('');
         setIsAdding(false);
     } else {
         setFormError('Bu kelime zaten listenizde mevcut!');
     }
   };
 
-  const handleSentenceClick = (id: string) => {
-    if (flippedSentenceId === id) return; // Zaten açıksa işlem yapma (veya kapatmak istersen null yap)
-    
-    setFlippedSentenceId(id);
-
-    // 3 saniye sonra otomatik kapat
-    setTimeout(() => {
-        setFlippedSentenceId(prev => prev === id ? null : prev);
-    }, 3000);
-  };
-
-  // Input değiştiğinde hatayı temizle
-  const handleInputChange = (setter: React.Dispatch<React.SetStateAction<string>>, value: string) => {
-      setter(value);
-      if (formError) setFormError(null);
-  };
-
-  // Tarih formatlamak için yardımcı fonksiyon
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return 'Tarih Yok';
-    return new Date(dateStr).toLocaleDateString('tr-TR', {
-      day: 'numeric',
-      month: 'numeric',
-      year: 'numeric'
-    });
+    return new Date(dateStr).toLocaleDateString('tr-TR', { day: 'numeric', month: 'numeric', year: 'numeric' });
   };
 
   return (
     <div className="w-full" id="word-list-section">
-      {/* Gizli Tetikleyici Buton (Dashboard'dan erişim için) */}
       <button id="force-open-add-word" className="hidden" onClick={handleForceOpen}></button>
 
-      {/* Search and Quick Add Bar */}
       <div className="flex flex-col md:flex-row gap-4 mb-8">
         <div className="relative flex-1 group">
           <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors pointer-events-none" size={24} />
@@ -116,16 +93,12 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
             className="w-full pl-16 pr-14 py-5 bg-zinc-900 border border-white/10 rounded-3xl focus:outline-none focus:border-blue-500/50 focus:bg-zinc-800 transition-all text-lg font-bold text-white placeholder:text-slate-500 h-full shadow-lg shadow-black/20"
           />
           {searchTerm && (
-            <button 
-                onClick={() => setSearchTerm('')}
-                className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
-            >
+            <button onClick={() => setSearchTerm('')} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors">
                 <X size={20} />
             </button>
           )}
         </div>
         <button 
-          id="toggle-add-btn"
           onClick={() => { setIsAdding(!isAdding); setFormError(null); }}
           className={`flex items-center justify-center gap-2 px-8 py-5 rounded-3xl font-black text-lg transition-all active:scale-95 whitespace-nowrap ${isAdding ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-xl shadow-blue-900/20'}`}
         >
@@ -141,149 +114,83 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
                     <h4 className="text-2xl font-black text-white">Yeni Kelime</h4>
                     <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Manuel Giriş</p>
                 </div>
-                
-                {/* Kelime Alanları */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <input 
-                      required 
-                      value={newEng} 
-                      onChange={e => handleInputChange(setNewEng, e.target.value)} 
-                      placeholder="İngilizce Kelime" 
-                      className={`w-full p-5 rounded-2xl bg-black border ${formError ? 'border-red-500/50' : 'border-white/5'} focus:border-blue-500 transition-all outline-none text-white font-bold`}
-                      onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen bu alanı doldurun.')}
-                      onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
-                    />
-                    <input 
-                      required 
-                      value={newTr} 
-                      onChange={e => handleInputChange(setNewTr, e.target.value)} 
-                      placeholder="Türkçe Karşılığı" 
-                      className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold"
-                      onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('Lütfen bu alanı doldurun.')}
-                      onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
-                    />
+                    <input required value={newEng} onChange={e => setNewEng(e.target.value)} placeholder="İngilizce Kelime" className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold" />
+                    <input required value={newTr} onChange={e => setNewTr(e.target.value)} placeholder="Türkçe Karşılığı" className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold" />
                 </div>
-
-                {/* Cümle Alanları */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    <div className="relative">
-                        <span className="absolute -top-3 left-4 bg-zinc-900 px-2 text-[10px] font-bold text-slate-500 uppercase">Opsiyonel</span>
-                        <input 
-                          value={newEx} 
-                          onChange={e => handleInputChange(setNewEx, e.target.value)} 
-                          placeholder="İngilizce Örnek Cümle" 
-                          className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold"
-                        />
-                    </div>
-                    <div className="relative">
-                        <span className="absolute -top-3 left-4 bg-zinc-900 px-2 text-[10px] font-bold text-slate-500 uppercase">Opsiyonel</span>
-                        <input 
-                          value={newTrEx} 
-                          onChange={e => handleInputChange(setNewTrEx, e.target.value)} 
-                          placeholder="Türkçe Cümle Çevirisi" 
-                          className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold"
-                        />
-                    </div>
+                    <input value={newEx} onChange={e => setNewEx(e.target.value)} placeholder="İngilizce Örnek Cümle" className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold" />
+                    <input value={newTrEx} onChange={e => setNewTrEx(e.target.value)} placeholder="Türkçe Cümle Çevirisi" className="w-full p-5 rounded-2xl bg-black border border-white/5 focus:border-blue-500 transition-all outline-none text-white font-bold" />
                 </div>
-                
-                {formError && (
-                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 animate-shake">
-                        <AlertCircle size={20} />
-                        <span className="font-bold text-sm">{formError}</span>
-                    </div>
-                )}
-
-                <button 
-                  type="submit" 
-                  disabled={isSubmitting}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-900/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                {formError && <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 animate-shake"><AlertCircle size={20} /> <span className="font-bold text-sm">{formError}</span></div>}
+                <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-900/20 transition-all active:scale-95 disabled:opacity-50">
                     {isSubmitting ? 'Kontrol Ediliyor...' : 'Listeye Kaydet'}
                 </button>
             </form>
           </div>
       )}
 
-      {/* Word Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredWords.map((word) => {
             const dateStr = formatDate(word.created_at);
-            const isSentenceFlipped = flippedSentenceId === word.id;
+            const isFlipped = flippedSentenceId === word.id;
+            
+            // Eğer cümle kelimenin kendisiyse veya çok kısaysa bozuk sayıp göstermiyoruz
+            const hasValidSentence = word.example_sentence && 
+                                     word.example_sentence.trim().length > 3 &&
+                                     word.example_sentence.trim().toLowerCase() !== word.english.trim().toLowerCase();
 
             return (
               <div key={word.id} className="bg-zinc-900 p-8 rounded-[40px] border-b-4 border-slate-700 hover:border-slate-500 transition-all group relative overflow-hidden flex flex-col h-full items-start text-left">
-                
-                {/* Set Badge (Varsa) */}
                 {word.set_name && (
                     <div className="absolute top-0 right-0 bg-blue-500/20 text-blue-400 text-[10px] font-black uppercase px-4 py-2 rounded-bl-2xl border-l border-b border-blue-500/20 flex items-center gap-1.5 backdrop-blur-sm z-10">
-                        <Layers size={12} />
-                        {word.set_name}
+                        <Layers size={12} /> {word.set_name}
                     </div>
                 )}
 
-                {/* Header: English + Speaker */}
                 <div className="flex justify-between items-start w-full mb-3 mt-2">
                     <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition-colors leading-tight">{word.english}</h3>
                     <button onClick={() => speak(word.english)} className="text-slate-600 hover:text-blue-400 p-2 rounded-xl bg-white/5 transition-all flex-shrink-0 ml-2">
                         <Volume2 size={20} />
                     </button>
                 </div>
-                
-                {/* Turkish Meaning */}
                 <p className="text-slate-500 font-bold text-lg mb-6">{word.turkish}</p>
                 
-                {/* 3D Flip Sentence Card */}
-                {word.example_sentence ? (
+                {hasValidSentence ? (
                     <div 
-                        className="perspective-1000 w-full mb-6 cursor-pointer group/sentence"
-                        onClick={(e) => { e.stopPropagation(); handleSentenceClick(word.id); }}
+                      className="perspective-1000 w-full mb-6 cursor-pointer group/sentence"
+                      onClick={() => handleSentenceClick(word.id)}
                     >
-                        <div className={`relative w-full transition-transform duration-700 transform-style-3d grid ${isSentenceFlipped ? 'rotate-y-180' : ''}`}>
+                        <div className={`relative w-full transition-transform duration-700 transform-style-3d min-h-[110px] ${isFlipped ? 'rotate-y-180' : ''}`}>
                             
-                            {/* FRONT FACE (English) */}
-                            <div className="col-start-1 row-start-1 backface-hidden bg-zinc-800/80 border border-white/5 p-6 rounded-3xl hover:bg-zinc-800 hover:border-white/20 transition-colors flex items-center min-h-[100px]">
-                                <p className="text-sm font-medium leading-relaxed text-slate-300 italic w-full">
+                            {/* ÖN YÜZ (EN Cümle) */}
+                            <div className="absolute inset-0 backface-hidden bg-black/40 border border-white/5 p-6 rounded-[32px] group-hover/sentence:bg-black/60 transition-colors flex items-center">
+                                <p className="text-sm font-bold leading-relaxed text-blue-100 italic relative z-10">
                                     "{word.example_sentence}"
                                 </p>
-                                {/* Hint Icon */}
-                                <div className="absolute bottom-3 right-4 opacity-0 group-hover/sentence:opacity-100 transition-opacity">
-                                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
-                                        <Languages size={12} /> Çevir
-                                     </span>
+                                <div className="absolute bottom-3 right-4 opacity-30 group-hover/sentence:opacity-100 transition-opacity">
+                                    <Languages size={14} className="text-slate-500" />
                                 </div>
                             </div>
 
-                            {/* BACK FACE (Turkish) */}
-                            <div className="col-start-1 row-start-1 backface-hidden rotate-y-180 bg-blue-600 border border-blue-500 p-6 rounded-3xl shadow-lg shadow-blue-900/20 flex items-center min-h-[100px]">
-                                <p className="text-sm font-medium leading-relaxed text-white font-bold italic w-full">
-                                    "{word.turkish_sentence || 'Çeviri bulunamadı'}"
+                            {/* ARKA YÜZ (TR Çeviri) */}
+                            <div className="absolute inset-0 backface-hidden rotate-y-180 bg-blue-600 border border-blue-500 p-6 rounded-[32px] flex items-center shadow-lg shadow-blue-900/20">
+                                <p className="text-xs font-black leading-relaxed text-white uppercase tracking-wider relative z-10">
+                                    {word.turkish_sentence || 'Çeviri eklenmemiş'}
                                 </p>
                             </div>
-                            
+
                         </div>
                     </div>
                 ) : (
                     <div className="flex-1 mb-6 w-full"></div>
                 )}
 
-                {/* Footer Actions - Flex Row (No absolute positioning) */}
                 <div className="w-full flex justify-between items-center mt-auto pt-2">
-                    {/* Left Action: Date Badge (Orange) */}
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onDeleteByDate(dateStr); }}
-                        className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-orange-500/10 text-orange-500 border border-orange-500/20 hover:bg-orange-500 hover:text-white transition-all group/date"
-                        title={`${dateStr} tarihindeki tüm kelimeleri sil`}
-                    >
-                        <Calendar size={16} />
-                        <span className="text-[11px] font-black tracking-widest">{dateStr}</span>
+                    <button onClick={() => onDeleteByDate(dateStr)} className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-orange-500/10 text-orange-500 border border-orange-500/20 hover:bg-orange-500 hover:text-white transition-all group/date">
+                        <Calendar size={16} /> <span className="text-[11px] font-black tracking-widest">{dateStr}</span>
                     </button>
-
-                    {/* Right Action: Single Delete Button */}
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onDelete(word.id); }}
-                      className="p-3 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all active:scale-90"
-                      title="Sadece bu kelimeyi sil"
-                    >
+                    <button onClick={() => onDelete(word.id)} className="p-3 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all active:scale-90">
                       <Trash2 size={20} />
                     </button>
                 </div>
@@ -291,40 +198,6 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onDeleteByDate, on
             );
         })}
       </div>
-
-      {/* Empty States */}
-      {words.length === 0 && !isAdding && (
-          <div className="w-full py-24 bg-zinc-900 rounded-[48px] border border-dashed border-white/10 flex flex-col items-center justify-center text-center">
-              <div className="bg-white/5 p-6 rounded-3xl mb-6">
-                 <Sparkles className="text-slate-500" size={48} />
-              </div>
-              <h3 className="text-2xl font-black text-white mb-6">Henüz kelime yok.</h3>
-              
-              <div className="flex flex-col md:flex-row gap-4">
-                  <button 
-                    onClick={onOpenUpload}
-                    className="flex items-center gap-3 bg-blue-600 hover:bg-blue-50 text-white px-8 py-4 rounded-2xl font-black transition-all active:scale-95 shadow-lg shadow-blue-900/20"
-                  >
-                      <Image size={20} />
-                      Resim ile Yükle
-                  </button>
-                  <button 
-                    onClick={() => { setIsAdding(true); setFormError(null); }}
-                    className="flex items-center gap-3 bg-zinc-800 hover:bg-zinc-700 text-white px-8 py-4 rounded-2xl font-black transition-all active:scale-95 border border-white/5"
-                  >
-                      <Plus size={20} />
-                      Hızlı Ekle
-                  </button>
-              </div>
-          </div>
-      )}
-
-      {words.length > 0 && filteredWords.length === 0 && (
-          <div className="col-span-full py-20 bg-zinc-900 rounded-[40px] border border-white/5 flex flex-col items-center justify-center">
-              <p className="text-slate-700 font-black text-xl mb-2">Aradığın kelime bulunamadı.</p>
-              <button onClick={() => setSearchTerm('')} className="text-blue-500 text-sm font-bold hover:underline">Aramayı Temizle</button>
-          </div>
-      )}
     </div>
   );
 };
