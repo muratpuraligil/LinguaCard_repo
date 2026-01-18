@@ -12,7 +12,7 @@ import ArchiveView from './components/ArchiveView';
 import Auth from './components/Auth';
 import DeleteModal from './components/DeleteModal';
 import { PulseLoader } from './components/Loader';
-import { CheckCircle2, X, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, X } from 'lucide-react';
 
 interface Toast {
   message: string;
@@ -25,7 +25,7 @@ const WORKER_CODE = `
     try {
       const bitmap = await createImageBitmap(file);
       let { width, height } = bitmap;
-      const MAX_DIMENSION = 512;
+      const MAX_DIMENSION = 1024; // OCR başarısı için 512'den 1024'e yükseltildi
       
       if (width > height) {
         if (width > MAX_DIMENSION) {
@@ -43,7 +43,7 @@ const WORKER_CODE = `
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error("Canvas context error");
       ctx.drawImage(bitmap, 0, 0, width, height);
-      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 });
+      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 });
       self.postMessage({ success: true, blob: blob });
     } catch (error) {
       self.postMessage({ success: false, error: error.message });
@@ -81,51 +81,53 @@ export default function App() {
   };
 
   useEffect(() => {
-    const initializeApp = async () => {
+    let isMounted = true;
+
+    const initializeAuth = async () => {
       try {
         if (!supabase) {
-          setLoadingSession(false);
+          if (isMounted) setLoadingSession(false);
           return;
         }
-        const { data, error } = await supabase.auth.getSession();
-        if (!error && data.session) {
-            setSession(data.session);
-            const allWords = await wordService.getAllWords(data.session.user.id);
+
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error) throw error;
+
+        if (isMounted) {
+          if (currentSession) {
+            setSession(currentSession);
+            const allWords = await wordService.getAllWords(currentSession.user.id);
             setWords(allWords || []);
+          }
         }
-      } catch (e) {
-          console.error("Auth init error:", e);
+      } catch (err) {
+        console.error("Başlatma hatası:", err);
       } finally {
-        setLoadingSession(false);
+        if (isMounted) setLoadingSession(false);
       }
     };
-    initializeApp();
 
-    const { data: { subscription } } = supabase?.auth.onAuthStateChange(async (event, newSession) => {
-      if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !newSession)) {
-          setSession(null);
-          setWords([]);
-          wordService.clearCache();
-      } else if (newSession) {
-          setSession(newSession);
-          const allWords = await wordService.getAllWords(newSession.user.id);
-          setWords(allWords || []);
+    initializeAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (!isMounted) return;
+      
+      if (event === 'SIGNED_IN' && newSession) {
+        setSession(newSession);
+        wordService.getAllWords(newSession.user.id).then(w => setWords(w || []));
+      } else if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setWords([]);
+        wordService.clearCache();
       }
-    }) || { data: { subscription: { unsubscribe: () => {} } } };
-    
-    return () => subscription.unsubscribe();
-  }, []);
+    });
 
-  const cancelOcr = () => {
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-      workerRef.current?.terminate();
-      workerRef.current = null;
-      supabase?.auth.startAutoRefresh();
-      setOcrLoading(false);
-      setOcrStatus('IDLE');
-      showToast("İşlem durduruldu.", "warning");
-  };
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const handleImageAnalysis = (file: File) => {
     if (ocrLoading) return;
@@ -140,16 +142,14 @@ export default function App() {
     workerRef.current = worker;
 
     worker.onmessage = async (e) => {
-        const { success, blob: resizedBlob, error } = e.data;
+        const { success, blob: resizedBlob, error: workerError } = e.data;
 
         if (success) {
             try {
-                supabase?.auth.stopAutoRefresh();
                 setOcrStatus('CONNECTING');
                 const base64Data = await blobToBase64(resizedBlob);
                 
                 setOcrStatus('ANALYZING');
-                // ESKİ Gemini Servisi Kaldırıldı, YENİ Edge Function Servisi Çağrılıyor
                 const extracted = await analyzeImage(
                   base64Data, 
                   session,
@@ -170,16 +170,16 @@ export default function App() {
                 }
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
-                  showToast(err.message || "Analiz sırasında bir sorun oluştu.", "error");
+                  const errorMsg = err.message || "Analiz sırasında bir sorun oluştu.";
+                  showToast(errorMsg, "error");
                 }
             } finally {
-                supabase?.auth.startAutoRefresh();
                 setOcrLoading(false);
                 setOcrStatus('IDLE');
                 abortControllerRef.current = null;
             }
         } else {
-            showToast(error || "Görsel hazırlama hatası.", "error");
+            showToast(workerError || "Görsel hazırlama hatası.", "error");
             setOcrLoading(false);
             setOcrStatus('IDLE');
         }
@@ -191,6 +191,15 @@ export default function App() {
 
     worker.postMessage({ file });
   };
+
+  if (loadingSession) return (
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+      <PulseLoader />
+      <p className="text-slate-500 font-bold mt-8 animate-pulse text-[10px] uppercase tracking-[0.4em]">Sistem Hazırlanıyor...</p>
+    </div>
+  );
+  
+  if (!session) return <Auth />;
 
   const displayWords = words
     .filter(w => !w.is_archived && !w.set_name)
@@ -205,45 +214,10 @@ export default function App() {
       return sortedActive.slice(offset, offset + 20);
   };
 
-  const handleNextFlashcardSet = () => {
-      const currentOffset = parseInt(localStorage.getItem('lingua_global_offset') || '0');
-      const nextOffset = currentOffset + 20;
-      const totalCount = words.filter(w => !w.is_archived && !w.set_name).length;
-      localStorage.setItem('lingua_global_offset', (nextOffset >= totalCount ? 0 : nextOffset).toString());
-      showToast(nextOffset >= totalCount ? "Başa dönüldü." : "Sıradaki sete geçildi.");
-  };
-
   const handleArchiveWord = async (id: string) => {
     setWords(prev => prev.map(w => w.id === id ? { ...w, is_archived: true } : w));
     await wordService.toggleArchive(id, true);
-    showToast("Öğrenildi.");
   };
-
-  const handleRestoreWord = async (id: string) => {
-    setWords(prev => prev.map(w => w.id === id ? { ...w, is_archived: false } : w));
-    await wordService.toggleArchive(id, false);
-  };
-
-  const handleAddWord = async (english: string, turkish: string, example: string, tr_ex: string): Promise<boolean> => {
-    try {
-      const newWord = await wordService.addWord({ english, turkish, example_sentence: example, turkish_sentence: tr_ex }, session?.user?.id);
-      if (newWord) {
-        setWords(prev => [newWord, ...prev]);
-        showToast("Eklendi.");
-        return true;
-      }
-    } catch (e) {}
-    return false;
-  };
-
-  if (loadingSession) return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center">
-      <PulseLoader />
-      <p className="text-slate-500 font-bold mt-8 animate-pulse text-[10px] uppercase tracking-[0.4em]">Yükleniyor...</p>
-    </div>
-  );
-  
-  if (!session) return <Auth />;
 
   return (
     <div className="bg-black min-h-screen text-white font['Plus_Jakarta_Sans']">
@@ -260,22 +234,32 @@ export default function App() {
           </div>
         )}
 
-        {mode === AppMode.FLASHCARDS && <FlashcardMode words={getSequentialSet()} onExit={() => setMode(AppMode.HOME)} onNextSet={handleNextFlashcardSet} onRemoveWord={handleArchiveWord} />}
-        {mode === AppMode.QUIZ && <QuizMode words={getSequentialSet()} allWords={words.filter(w => !w.is_archived)} onExit={() => setMode(AppMode.HOME)} />}
+        {mode === AppMode.FLASHCARDS && <FlashcardMode words={getSequentialSet()} onExit={() => setMode(AppMode.HOME)} onNextSet={() => {}} onRemoveWord={handleArchiveWord} />}
+        {mode === AppMode.QUIZ && <QuizMode words={getSequentialSet()} allWords={words} onExit={() => setMode(AppMode.HOME)} />}
         {mode === AppMode.SENTENCES && <SentenceMode words={getSequentialSet()} onExit={() => setMode(AppMode.HOME)} />}
-        {mode === AppMode.ARCHIVE && <ArchiveView words={words.filter(w => w.is_archived)} onExit={() => setMode(AppMode.HOME)} onRestore={handleRestoreWord} />}
+        {mode === AppMode.ARCHIVE && <ArchiveView words={words.filter(w => w.is_archived)} onExit={() => setMode(AppMode.HOME)} onRestore={() => {}} />}
         
         {mode === AppMode.HOME && (
             <Dashboard 
                 userEmail={session.user.email} 
                 words={displayWords} 
                 onModeSelect={setMode}
-                onAddWord={handleAddWord} 
+                onAddWord={async (en, tr, ex, trex) => {
+                  const newWord = await wordService.addWord({ english: en, turkish: tr, example_sentence: ex, turkish_sentence: trex }, session.user.id);
+                  if (newWord) {
+                    setWords(prev => [newWord, ...prev]);
+                    return true;
+                  }
+                  return false;
+                }} 
                 onDeleteWord={(id) => setWordToDelete(id)} 
                 onDeleteByDate={(date) => setDateToDelete(date)}
-                onLogout={() => supabase!.auth.signOut()}
+                onLogout={() => supabase.auth.signOut()}
                 onOpenUpload={() => setShowUploadModal(true)}
-                onQuickAdd={() => document.getElementById('force-open-add-word')?.click()}
+                onQuickAdd={() => {
+                  const btn = document.getElementById('force-open-add-word');
+                  if (btn) btn.click();
+                }}
                 onResetAccount={() => {}} 
             />
         )}
@@ -286,30 +270,26 @@ export default function App() {
             onFileSelect={handleImageAnalysis} 
             isLoading={ocrLoading} 
             ocrStatus={ocrStatus}
-            onCancelLoading={cancelOcr}
+            onCancelLoading={() => {
+              abortControllerRef.current?.abort();
+              setOcrLoading(false);
+            }}
             showToast={showToast} 
           />
         )}
-        
+
         {wordToDelete && <DeleteModal onConfirm={async () => {
-          setWords(prev => prev.filter(w => w.id !== wordToDelete));
           await wordService.deleteWord(wordToDelete);
+          setWords(prev => prev.filter(w => w.id !== wordToDelete));
           setWordToDelete(null);
-          showToast("Silindi.", "warning");
         }} onCancel={() => setWordToDelete(null)} />}
 
-        {dateToDelete && <DeleteModal 
-            title="Grubu Sil?"
-            description={`${dateToDelete} tarihindeki kelimeleri silmek istediğine emin misin?`}
-            onConfirm={async () => {
-              const ids = words.filter(w => new Date(w.created_at || '').toLocaleDateString('tr-TR') === dateToDelete).map(w => w.id);
-              setWords(prev => prev.filter(w => !ids.includes(w.id)));
-              await wordService.deleteWords(ids);
-              setDateToDelete(null);
-              showToast("Tarih grubu silindi.", "warning");
-            }} 
-            onCancel={() => setDateToDelete(null)} 
-        />}
+        {dateToDelete && <DeleteModal title="Grubu Sil" description={`${dateToDelete} tarihindeki kelimeleri silmek istediğine emin misin?`} onConfirm={async () => {
+          const toDelete = words.filter(w => new Date(w.created_at!).toLocaleDateString('tr-TR') === dateToDelete).map(w => w.id);
+          await wordService.deleteWords(toDelete);
+          setWords(prev => prev.filter(w => !toDelete.includes(w.id)));
+          setDateToDelete(null);
+        }} onCancel={() => setDateToDelete(null)} />}
     </div>
   );
 }
