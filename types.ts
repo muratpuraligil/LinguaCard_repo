@@ -31,3 +31,5 @@ export interface QuizQuestion {
   options: string[];
   correctAnswer: string;
 }
+
+export type OcrStatus = 'IDLE' | 'PREPARING' | 'CONNECTING' | 'ANALYZING';

@@ -5,11 +5,14 @@ import { Word } from '../types';
 const supabaseUrl = 'https://xxjfrsbcygpcksndjrzm.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4amZyc2JjeWdwY2tzbmRqcnptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNTc1NDQsImV4cCI6MjA4MTgzMzU0NH0.j8sFVCH1A_hbrDOMEAUHPn5-0seRK6ZtxS2KQXxRaho';
 
-const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
-
-export const supabase = isSupabaseConfigured 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce'
+  }
+});
 
 const LOCAL_STORAGE_KEY = 'lingua_words_local';
 
@@ -35,18 +38,25 @@ const mapDbToApp = (dbRecord: any): Word => ({
   created_at: dbRecord.created_at,
   user_id: dbRecord.user_id,
   set_name: dbRecord.set_name || undefined,
-  is_archived: dbRecord.is_archived || false
+  is_archived: !!dbRecord.is_archived
 });
 
-const mapAppToDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string) => ({
-  word_en: word.english.trim(),
-  word_tr: word.turkish.trim(),
-  example_sentence_en: word.example_sentence.trim(),
-  example_sentence_tr: word.turkish_sentence.trim(),
-  user_id: userId,
-  set_name: word.set_name || null,
-  is_archived: word.is_archived || false
-});
+const mapAppToDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string, includeArchiveField: boolean = true) => {
+  const payload: any = {
+    word_en: word.english.trim(),
+    word_tr: word.turkish.trim(),
+    example_sentence_en: (word.example_sentence || '').trim(),
+    example_sentence_tr: (word.turkish_sentence || '').trim(),
+    user_id: userId,
+    set_name: word.set_name || null
+  };
+  
+  if (includeArchiveField) {
+    payload.is_archived = !!word.is_archived;
+  }
+  
+  return payload;
+};
 
 export const wordService = {
   getCachedWords(): Word[] {
@@ -58,127 +68,116 @@ export const wordService = {
   },
 
   async getAllWords(userId?: string): Promise<Word[]> {
-    let remoteVocab: Word[] = [];
-    if (isSupabaseConfigured && supabase) {
-      try {
-        let query = supabase.from('words').select('*');
-        if (userId) query = query.eq('user_id', userId);
-        const { data, error } = await query;
-        if (!error && data) remoteVocab = data.map(mapDbToApp);
-      } catch (e) { console.error(e); }
+    try {
+      // is_archived sütunu yoksa hata almamak için select(*) yerine explicit alanlar da denenebilir
+      // Ancak PostgREST genellikle eksik sütunlarda 400 hatası verir.
+      let query = supabase.from('words').select('*');
+      if (userId) query = query.eq('user_id', userId);
+      const { data, error } = await query;
+      
+      if (error) {
+          // is_archived hatası alırsak, lokal veriye güvenelim ve hatayı loglayalım
+          console.warn("Supabase Fetch Warning (Şema hatası olabilir):", error.message);
+      }
+
+      if (!error && data) {
+        const remoteWords = data.map(mapDbToApp);
+        setLocalWords(remoteWords);
+        return remoteWords;
+      }
+    } catch (e) { 
+        console.error("Critical Word Fetch Error:", e); 
     }
-    
-    if (remoteVocab.length > 0) setLocalWords(remoteVocab);
-    return remoteVocab.length > 0 ? remoteVocab : getLocalWords();
+    return getLocalWords();
   },
 
   async toggleArchive(id: string, isArchived: boolean): Promise<void> {
     const current = getLocalWords();
     setLocalWords(current.map(w => w.id === id ? { ...w, is_archived: isArchived } : w));
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('words').update({ is_archived: isArchived }).eq('id', id);
-    }
+    
+    try {
+        const { error } = await supabase.from('words').update({ is_archived: isArchived }).eq('id', id);
+        if (error && error.message.includes('is_archived')) {
+            console.error("Arşivleme özelliği veritabanında henüz aktif değil. Lütfen SQL komutunu çalıştırın.");
+        }
+    } catch (e) {}
   },
 
   async addWord(word: Omit<Word, 'id' | 'created_at'>, userId?: string): Promise<Word | null> {
-    const finalWord: Word = {
-      ...word,
-      id: crypto.randomUUID(),
-      created_at: new Date().toISOString(),
-      user_id: userId,
-      is_archived: false
-    };
-
-    const updatedLocal = [finalWord, ...getLocalWords()];
-    setLocalWords(updatedLocal);
-
-    if (isSupabaseConfigured && supabase && userId) {
-      try {
-        const payload = mapAppToDb(finalWord, userId);
-        const { data, error } = await supabase.from('words').insert([payload]).select().single();
-        if (!error && data) {
-            const dbWord = mapDbToApp(data);
-            // Update local ID with real DB ID if needed, usually UUID matches but consistent data is better
-            const refreshedLocal = updatedLocal.map(w => w.id === finalWord.id ? dbWord : w);
-            setLocalWords(refreshedLocal);
-            return dbWord;
-        }
-      } catch (e) { console.error(e); }
-    } 
-    return finalWord;
-  },
-
-  // PERFORMANS ÇÖZÜMÜ: Toplu Ekleme Fonksiyonu
-  async addWordsBulk(words: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<Word[]> {
-    if (words.length === 0) return [];
-
-    // 1. Frontend için geçici nesneleri oluştur (Tek seferde)
-    const newWords: Word[] = words.map(w => ({
-        ...w,
-        id: crypto.randomUUID(),
-        created_at: new Date().toISOString(),
-        user_id: userId,
-        is_archived: false
-    }));
-
-    // 2. LocalStorage'ı TEK SEFERDE güncelle (IO darboğazını önler)
-    const currentWords = getLocalWords();
-    const updatedLocal = [...newWords, ...currentWords];
-    setLocalWords(updatedLocal);
-
-    // 3. Supabase'e TEK SEFERDE (Bulk Insert) gönder
-    if (isSupabaseConfigured && supabase && userId) {
-        try {
-            const payload = newWords.map(w => mapAppToDb(w, userId));
-            // Supabase bulk insert
-            const { data, error } = await supabase.from('words').insert(payload).select();
-            
-            if (!error && data) {
-                // DB'den dönen gerçek verilerle local veriyi senkronize et (ID değişimi vs için)
-                const dbWords = data.map(mapDbToApp);
-                
-                // DB'den gelenleri ve önceden var olanları birleştir
-                // (Geçici eklediklerimizi silip yerine gerçeklerini koyuyoruz gibi düşünebiliriz ama
-                // en temizi listenin başına DB'den gelenleri koymaktır)
-                const finalLocal = [...dbWords, ...currentWords];
-                setLocalWords(finalLocal);
-                return dbWords;
-            }
-        } catch (e) { 
-            console.error("Bulk insert error:", e); 
-        }
+    const payload = mapAppToDb(word, userId, true);
+    let { data, error } = await supabase.from('words').insert([payload]).select().single();
+    
+    // Eğer is_archived sütunu yüzünden hata alıyorsak, o alan olmadan tekrar dene
+    if (error && error.message.includes('is_archived')) {
+        const fallbackPayload = mapAppToDb(word, userId, false);
+        const retry = await supabase.from('words').insert([fallbackPayload]).select().single();
+        data = retry.data;
+        error = retry.error;
     }
 
-    return newWords;
+    if (!error && data) {
+        const dbWord = mapDbToApp(data);
+        const updated = [dbWord, ...getLocalWords()];
+        setLocalWords(updated);
+        return dbWord;
+    }
+    return null;
+  },
+
+  async addWordsBulk(words: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<Word[]> {
+    if (words.length === 0) return [];
+    
+    const latestFromDb = await this.getAllWords(userId);
+    const dbMap = new Set(latestFromDb.map(w => w.english.toLowerCase().trim()));
+    const uniqueNewWords = words.filter(w => !dbMap.has(w.english.toLowerCase().trim()));
+    
+    if (uniqueNewWords.length === 0) return [];
+
+    let payload = uniqueNewWords.map(w => mapAppToDb(w, userId, true));
+    let { data, error } = await supabase.from('words').insert(payload).select();
+    
+    // Fallback: is_archived alanı yoksa silip tekrar dene
+    if (error && error.message.includes('is_archived')) {
+        console.warn("is_archived sütunu bulunamadı, bu alan olmadan deneniyor...");
+        payload = uniqueNewWords.map(w => mapAppToDb(w, userId, false));
+        const retry = await supabase.from('words').insert(payload).select();
+        data = retry.data;
+        error = retry.error;
+    }
+    
+    if (!error && data) {
+        const added = data.map(mapDbToApp);
+        const finalLocal = [...added, ...latestFromDb];
+        setLocalWords(finalLocal);
+        return added;
+    }
+    
+    if (error) {
+      console.error("Supabase Bulk Insert Error:", error.message);
+      throw new Error(error.message);
+    }
+    
+    return [];
   },
 
   async deleteWord(id: string): Promise<void> {
     setLocalWords(getLocalWords().filter(w => w.id !== id));
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('words').delete().eq('id', id);
-    }
+    await supabase.from('words').delete().eq('id', id);
   },
 
   async deleteWords(ids: string[]): Promise<void> {
-    const currentWords = getLocalWords();
-    setLocalWords(currentWords.filter(w => !ids.includes(w.id)));
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('words').delete().in('id', ids);
-    }
+    setLocalWords(getLocalWords().filter(w => !ids.includes(w.id)));
+    await supabase.from('words').delete().in('id', ids);
   },
 
   async renameCustomSet(oldName: string, newName: string): Promise<void> {
     const current = getLocalWords();
     setLocalWords(current.map(w => w.set_name === oldName ? { ...w, set_name: newName } : w));
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('words').update({ set_name: newName }).eq('set_name', oldName);
-    }
+    await supabase.from('words').update({ set_name: newName }).eq('set_name', oldName);
   },
 
   async deleteCustomSet(setName: string): Promise<void> {
     setLocalWords(getLocalWords().filter(w => w.set_name !== setName));
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('words').delete().eq('set_name', setName);
-    }
+    await supabase.from('words').delete().eq('set_name', setName);
   }
 };

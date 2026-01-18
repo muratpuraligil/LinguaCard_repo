@@ -1,18 +1,21 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Image as ImageIcon, X, Keyboard, Sparkles, RotateCcw, Clock } from 'lucide-react';
+import { Image as ImageIcon, X, Keyboard, Sparkles, RotateCcw, Clock, AlertTriangle, Zap } from 'lucide-react';
 import { PulseLoader } from './Loader';
+import { OcrStatus } from '../types';
 
 interface UploadModalProps {
   onClose: () => void;
   onFileSelect: (file: File) => void;
   isLoading: boolean;
+  onCancelLoading?: () => void;
   showToast?: (message: string, type: 'success' | 'error' | 'warning') => void;
+  ocrStatus: OcrStatus;
 }
 
-const COOLDOWN_MS = 10_000; 
+const COOLDOWN_MS = 3_000; 
 
-const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoading, showToast }) => {
+const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoading, onCancelLoading, showToast, ocrStatus }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -53,7 +56,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
           const timePassed = now - parseInt(lastCall);
           if (timePassed < COOLDOWN_MS) {
               const remaining = Math.ceil((COOLDOWN_MS - timePassed) / 1000);
-              showToast?.(`Lütfen ${remaining} saniye sonra tekrar deneyin.`, 'warning');
+              showToast?.(`Lütfen ${remaining} saniye bekleyin.`, 'warning');
               return;
           }
       }
@@ -67,25 +70,47 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
       setPreviewUrl(null);
   };
 
+  const statusMap: Record<OcrStatus, { text: string; icon: React.ReactNode }> = {
+    PREPARING: {
+        text: "Görsel hazırlanıyor...",
+        icon: <RotateCcw size={16} className="animate-spin" />
+    },
+    CONNECTING: {
+        text: "Yapay zeka ile bağlantı kuruluyor...",
+        icon: <Zap size={16} className="text-yellow-400 animate-pulse" />
+    },
+    ANALYZING: {
+        text: "Kelimeler çıkarılıyor...",
+        icon: <Sparkles size={16} className="text-blue-400 animate-pulse" />
+    },
+    IDLE: {
+        text: "Başlatılıyor...",
+        icon: <Clock size={16} />
+    }
+  };
+
+  const currentStatus = statusMap[ocrStatus] || statusMap.IDLE;
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 animate-fadeIn">
       <div className="bg-[#0a0a0a] w-full max-w-lg rounded-[48px] p-10 border border-white/10 shadow-2xl relative overflow-hidden">
-        {/* Close Button - Always available unless critical loading */}
-        <button 
-          onClick={onClose} 
-          disabled={isLoading}
-          className="absolute top-6 right-6 w-12 h-12 flex items-center justify-center bg-white/5 hover:bg-red-500 hover:text-white text-slate-400 rounded-full transition-all active:scale-90 disabled:opacity-0 disabled:pointer-events-none"
-        >
-            <X size={24} strokeWidth={2.5} />
-        </button>
+        
+        {!isLoading && (
+            <button 
+              onClick={onClose} 
+              className="absolute top-6 right-6 w-12 h-12 flex items-center justify-center bg-white/5 hover:bg-red-500 hover:text-white text-slate-400 rounded-full transition-all active:scale-90"
+            >
+                <X size={24} strokeWidth={2.5} />
+            </button>
+        )}
 
         {!previewUrl ? (
             <>
                 <div className="text-center mb-8 mt-4">
                     <div className="text-5xl mb-6 animate-float inline-block">📸</div>
-                    <h2 className="text-3xl font-black text-white mb-4 tracking-tight">Görsel Yükle veya Yapıştır</h2>
+                    <h2 className="text-3xl font-black text-white mb-4 tracking-tight">Görsel Yükle</h2>
                     <p className="text-slate-400 text-lg font-medium leading-relaxed">
-                        Resim dosyasını seçebilir veya <span className="text-white bg-white/10 px-2 py-0.5 rounded-lg">CTRL+V</span> ile yapıştırabilirsin.
+                        Yapıştır (<span className="text-white bg-white/10 px-2 py-0.5 rounded-lg">CTRL+V</span>) veya Dosya Seç.
                     </p>
                 </div>
 
@@ -104,7 +129,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
                      </label>
                      <div className="flex items-center gap-3 text-slate-400 bg-black/40 px-6 py-3 rounded-full border border-white/5">
                         <Keyboard size={18} />
-                        <span className="text-xs font-bold">Panodan Yapıştır (CTRL+V)</span>
+                        <span className="text-xs font-bold">Yapıştırmak için CTRL+V</span>
                      </div>
                 </div>
             </>
@@ -112,9 +137,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
             <div className={`flex flex-col items-center transition-opacity ${isLoading ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
                 <div className="w-full aspect-video bg-black rounded-[32px] border border-white/10 overflow-hidden mb-8 relative">
                     <img src={previewUrl} className="w-full h-full object-contain" alt="Preview" />
-                    <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl text-[10px] font-black text-white/70 uppercase tracking-widest flex items-center gap-2">
-                        <ImageIcon size={14} /> Önizleme
-                    </div>
                 </div>
 
                 <div className="flex flex-col gap-4 w-full">
@@ -124,7 +146,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
                         className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-lg shadow-xl shadow-blue-900/20 transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
                     >
                         <Sparkles size={22} />
-                        Analizi Başlat
+                        Kelimeleri Çıkar
                     </button>
                     
                     <button 
@@ -133,7 +155,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
                         className="w-full py-4 bg-zinc-900 text-slate-400 rounded-2xl font-bold text-sm hover:bg-zinc-800 transition-all flex items-center justify-center gap-2 disabled:opacity-30"
                     >
                         <RotateCcw size={18} />
-                        Görseli Değiştir
+                        Resmi Değiştir
                     </button>
                 </div>
             </div>
@@ -142,12 +164,23 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onFileSelect, isLoad
         {isLoading && (
             <div className="absolute inset-0 bg-black/95 rounded-[48px] flex flex-col items-center justify-center z-50 backdrop-blur-md animate-fadeIn">
                 <PulseLoader />
-                <p className="font-black text-white text-2xl tracking-tight mt-10">Görsel İşleniyor</p>
-                <div className="flex items-center gap-2 mt-4 text-blue-400">
-                    <Sparkles size={16} className="animate-pulse" />
-                    <p className="text-[10px] font-black uppercase tracking-[0.3em]">Yapay Zeka Analiz Ediyor</p>
+                <p className="font-black text-white text-2xl tracking-tight mt-10">Yapay Zeka Okuyor</p>
+                <div className="flex items-center gap-3 mt-4 text-slate-400 h-6">
+                    {currentStatus.icon}
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em]">{currentStatus.text}</p>
                 </div>
-                <p className="mt-8 text-slate-500 text-xs font-bold text-center px-12">Lütfen pencereyi kapatmayın, işlem 30 saniye sürebilir.</p>
+                
+                <p className="mt-8 text-slate-500 text-xs font-bold text-center px-12 leading-relaxed mb-10">
+                    Bu işlem internet hızınıza ve görselin karmaşıklığına göre biraz zaman alabilir.
+                </p>
+
+                <button 
+                    onClick={onCancelLoading}
+                    className="flex items-center gap-2 px-8 py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all active:scale-95"
+                >
+                    <AlertTriangle size={14} />
+                    İşlemi İptal Et
+                </button>
             </div>
         )}
       </div>
