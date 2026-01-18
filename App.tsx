@@ -25,7 +25,7 @@ const WORKER_CODE = `
     try {
       const bitmap = await createImageBitmap(file);
       let { width, height } = bitmap;
-      const MAX_DIMENSION = 1024; // OCR başarısı için 512'den 1024'e yükseltildi
+      const MAX_DIMENSION = 1024; 
       
       if (width > height) {
         if (width > MAX_DIMENSION) {
@@ -54,7 +54,8 @@ const WORKER_CODE = `
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1] || (reader.result as string));
+    // Prefix'i (data:image/...;base64,) kesmiyoruz, tam URL'i döndürüyoruz
+    reader.onloadend = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
@@ -147,11 +148,11 @@ export default function App() {
         if (success) {
             try {
                 setOcrStatus('CONNECTING');
-                const base64Data = await blobToBase64(resizedBlob);
+                const base64FullData = await blobToBase64(resizedBlob);
                 
                 setOcrStatus('ANALYZING');
                 const extracted = await analyzeImage(
-                  base64Data, 
+                  base64FullData, 
                   session,
                   abortControllerRef.current?.signal
                 );
