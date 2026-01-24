@@ -11,12 +11,12 @@ export async function analyzeImage(base64Image: string, session: any, signal?: A
   const mimeType = meta.match(/data:(.*);base64/)?.[1] || "image/jpeg"; // Fallback olarak jpeg
 
   try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/super-handler`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/analyze-image`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session?.access_token || anonKey}`,
         'Content-Type': 'application/json',
-        'apikey': anonKey 
+        'apikey': anonKey
       },
       body: JSON.stringify({
         imageBase64: pureBase64,
@@ -29,22 +29,22 @@ export async function analyzeImage(base64Image: string, session: any, signal?: A
 
     if (!response.ok) {
       console.error("Edge Function Error:", data);
-      
+
       if (data.error === "AI processing failed") {
         throw new Error("Yapay zeka görseli anlamlandıramadı. Lütfen yazının daha net olduğu farklı bir görsel deneyin.");
       }
-      
+
       throw new Error(data.error || `Servis hatası (${response.status})`);
     }
 
     if (data && data.word) {
       return Array.isArray(data.word) ? data.word : [data.word];
     }
-    
+
     if (Array.isArray(data)) return data;
 
     return [];
-    
+
   } catch (err: any) {
     if (err.name === 'AbortError') throw err;
     console.error("analyzeImage hatası:", err.message);

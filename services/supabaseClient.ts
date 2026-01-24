@@ -50,11 +50,11 @@ const mapAppToDb = (word: Omit<Word, 'id' | 'created_at'>, userId?: string, incl
     user_id: userId,
     set_name: word.set_name || null
   };
-  
+
   if (includeArchiveField) {
     payload.is_archived = !!word.is_archived;
   }
-  
+
   return payload;
 };
 
@@ -74,10 +74,10 @@ export const wordService = {
       let query = supabase.from('words').select('*');
       if (userId) query = query.eq('user_id', userId);
       const { data, error } = await query;
-      
+
       if (error) {
-          // is_archived hatası alırsak, lokal veriye güvenelim ve hatayı loglayalım
-          console.warn("Supabase Fetch Warning (Şema hatası olabilir):", error.message);
+        // is_archived hatası alırsak, lokal veriye güvenelim ve hatayı loglayalım
+        console.warn("Supabase Fetch Warning (Şema hatası olabilir):", error.message);
       }
 
       if (!error && data) {
@@ -85,8 +85,8 @@ export const wordService = {
         setLocalWords(remoteWords);
         return remoteWords;
       }
-    } catch (e) { 
-        console.error("Critical Word Fetch Error:", e); 
+    } catch (e) {
+      console.error("Critical Word Fetch Error:", e);
     }
     return getLocalWords();
   },
@@ -94,69 +94,83 @@ export const wordService = {
   async toggleArchive(id: string, isArchived: boolean): Promise<void> {
     const current = getLocalWords();
     setLocalWords(current.map(w => w.id === id ? { ...w, is_archived: isArchived } : w));
-    
+
     try {
-        const { error } = await supabase.from('words').update({ is_archived: isArchived }).eq('id', id);
-        if (error && error.message.includes('is_archived')) {
-            console.error("Arşivleme özelliği veritabanında henüz aktif değil. Lütfen SQL komutunu çalıştırın.");
-        }
-    } catch (e) {}
+      const { error } = await supabase.from('words').update({ is_archived: isArchived }).eq('id', id);
+      if (error && error.message.includes('is_archived')) {
+        console.error("Arşivleme özelliği veritabanında henüz aktif değil. Lütfen SQL komutunu çalıştırın.");
+      }
+    } catch (e) { }
   },
 
   async addWord(word: Omit<Word, 'id' | 'created_at'>, userId?: string): Promise<Word | null> {
     const payload = mapAppToDb(word, userId, true);
     let { data, error } = await supabase.from('words').insert([payload]).select().single();
-    
+
     // Eğer is_archived sütunu yüzünden hata alıyorsak, o alan olmadan tekrar dene
     if (error && error.message.includes('is_archived')) {
-        const fallbackPayload = mapAppToDb(word, userId, false);
-        const retry = await supabase.from('words').insert([fallbackPayload]).select().single();
-        data = retry.data;
-        error = retry.error;
+      const fallbackPayload = mapAppToDb(word, userId, false);
+      const retry = await supabase.from('words').insert([fallbackPayload]).select().single();
+      data = retry.data;
+      error = retry.error;
     }
 
     if (!error && data) {
-        const dbWord = mapDbToApp(data);
-        const updated = [dbWord, ...getLocalWords()];
-        setLocalWords(updated);
-        return dbWord;
+      const dbWord = mapDbToApp(data);
+      const updated = [dbWord, ...getLocalWords()];
+      setLocalWords(updated);
+      return dbWord;
     }
     return null;
   },
 
   async addWordsBulk(words: Omit<Word, 'id' | 'created_at'>[], userId?: string): Promise<Word[]> {
     if (words.length === 0) return [];
-    
-    const latestFromDb = await this.getAllWords(userId);
-    const dbMap = new Set(latestFromDb.map(w => w.english.toLowerCase().trim()));
-    const uniqueNewWords = words.filter(w => !dbMap.has(w.english.toLowerCase().trim()));
-    
-    if (uniqueNewWords.length === 0) return [];
 
-    let payload = uniqueNewWords.map(w => mapAppToDb(w, userId, true));
+    // Eğer set_name varsa, global "unique" kontrolünü atlıyoruz veya ona göre yapıyoruz.
+    // Şimdilik set_name olanlar için direkt ekleme yapalım (Kullanıcı aynı kelimeyi farklı setlerde isteyebilir).
+    // Ancak set olmayanlar (normal kelimeler) için kontrol devam etmeli.
+
+    const wordsWithSet = words.filter(w => !!w.set_name);
+    const wordsWithoutSet = words.filter(w => !w.set_name);
+
+    let finalWordsToAdd = [...wordsWithSet];
+
+    if (wordsWithoutSet.length > 0) {
+      const latestFromDb = await this.getAllWords(userId);
+      const dbMap = new Set(latestFromDb.map(w => w.english.toLowerCase().trim()));
+      const uniqueSimpleWords = wordsWithoutSet.filter(w => !dbMap.has(w.english.toLowerCase().trim()));
+      finalWordsToAdd = [...finalWordsToAdd, ...uniqueSimpleWords];
+    }
+
+    if (finalWordsToAdd.length === 0) return [];
+
+    let payload = finalWordsToAdd.map(w => mapAppToDb(w, userId, true));
     let { data, error } = await supabase.from('words').insert(payload).select();
-    
+
     // Fallback: is_archived alanı yoksa silip tekrar dene
     if (error && error.message.includes('is_archived')) {
-        console.warn("is_archived sütunu bulunamadı, bu alan olmadan deneniyor...");
-        payload = uniqueNewWords.map(w => mapAppToDb(w, userId, false));
-        const retry = await supabase.from('words').insert(payload).select();
-        data = retry.data;
-        error = retry.error;
+      console.warn("is_archived sütunu bulunamadı, bu alan olmadan deneniyor...");
+      payload = finalWordsToAdd.map(w => mapAppToDb(w, userId, false));
+      const retry = await supabase.from('words').insert(payload).select();
+      data = retry.data;
+      error = retry.error;
     }
-    
+
     if (!error && data) {
-        const added = data.map(mapDbToApp);
-        const finalLocal = [...added, ...latestFromDb];
-        setLocalWords(finalLocal);
-        return added;
+      const added = data.map(mapDbToApp);
+      // Local cache güncelleme
+      const currentLocal = getLocalWords();
+      const finalLocal = [...added, ...currentLocal];
+      setLocalWords(finalLocal);
+      return added;
     }
-    
+
     if (error) {
       console.error("Supabase Bulk Insert Error:", error.message);
       throw new Error(error.message);
     }
-    
+
     return [];
   },
 
