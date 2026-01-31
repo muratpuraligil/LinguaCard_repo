@@ -28,7 +28,8 @@ const WORKER_CODE = `
     try {
       const bitmap = await createImageBitmap(file);
       let { width, height } = bitmap;
-      const MAX_DIMENSION = 1024; 
+      // Text clarity is crucial for OCR, so we use a higher resolution limit.
+      const MAX_DIMENSION = 2500; 
       
       if (width > height) {
         if (width > MAX_DIMENSION) {
@@ -46,7 +47,7 @@ const WORKER_CODE = `
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error("Canvas context error");
       ctx.drawImage(bitmap, 0, 0, width, height);
-      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 });
+      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.95 });
       self.postMessage({ success: true, blob: blob });
     } catch (error) {
       self.postMessage({ success: false, error: error.message });
@@ -140,75 +141,58 @@ export default function App() {
     };
   }, []);
 
-  const handleImageAnalysis = (file: File) => {
+  const handleImageAnalysis = async (file: File) => {
     if (ocrLoading) return;
+
+    // RESIZE İŞLEMİNİ GEÇİCİ OLARAK DEVRE DIŞI BIRAKIYORUZ.
+    // Kullanıcının "eski hali çalışıyordu" geri bildirimi üzerine,
+    // Web Worker ve Resize işleminin resmi bozma ihtimaline karşı
+    // orijinal dosyayı direkt gönderiyoruz.
 
     setOcrLoading(true);
     setOcrStatus('PREPARING');
-    abortControllerRef.current = new AbortController();
 
-    const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-    const worker = new Worker(workerUrl);
-    workerRef.current = worker;
+    try {
+      setOcrStatus('CONNECTING');
+      // Direkt dosyayı base64'e çevir
+      const base64FullData = await blobToBase64(file);
 
-    worker.onmessage = async (e) => {
-      const { success, blob: resizedBlob, error: workerError } = e.data;
+      setOcrStatus('ANALYZING');
 
-      if (success) {
-        try {
-          setOcrStatus('CONNECTING');
-          const base64FullData = await blobToBase64(resizedBlob);
+      const analysisMode = pendingSetName ? 'document' : 'general';
 
-          setOcrStatus('ANALYZING');
-          const extracted = await analyzeImage(
-            base64FullData,
-            session,
-            abortControllerRef.current?.signal
-          );
+      const extracted = await analyzeImage(
+        base64FullData,
+        session,
+        undefined, // Signal şimdilik boş
+        analysisMode
+      );
 
-          if (extracted && extracted.length > 0) {
+      if (extracted && extracted.length > 0) {
+        const wordsToAdd = pendingSetName
+          ? extracted.map((w: any) => ({ ...w, set_name: pendingSetName }))
+          : extracted;
 
-            // Eğer pendingSetName varsa, kelimelere set_name ekle
-            const wordsToAdd = pendingSetName
-              ? extracted.map((w: any) => ({ ...w, set_name: pendingSetName }))
-              : extracted;
+        const addedWords = await wordService.addWordsBulk(wordsToAdd, session?.user?.id);
 
-            const addedWords = await wordService.addWordsBulk(wordsToAdd, session?.user?.id);
-
-            if (addedWords.length > 0) {
-              setWords(prev => [...addedWords, ...prev]); // En başa ekle
-              showToast(`${addedWords.length} kelime eklendi!`);
-              setShowUploadModal(false);
-              setPendingSetName(null); // Temizle
-            } else {
-              showToast("Analiz edilen kelimeler/cümleler zaten listenizde mevcut.", "warning");
-            }
-          } else {
-            showToast("Görselde anlaşılır içerik bulunamadı.", "warning");
-          }
-        } catch (err: any) {
-          if (err.name !== 'AbortError') {
-            const errorMsg = err.message || "Analiz sırasında bir sorun oluştu.";
-            showToast(errorMsg, "error");
-          }
-        } finally {
-          setOcrLoading(false);
-          setOcrStatus('IDLE');
-          abortControllerRef.current = null;
+        if (addedWords.length > 0) {
+          setWords(prev => [...addedWords, ...prev]);
+          showToast(`${addedWords.length} kelime eklendi!`);
+          setShowUploadModal(false);
+          setPendingSetName(null);
+        } else {
+          showToast("Analiz edilen kelimeler zaten listenizde.", "warning");
         }
       } else {
-        showToast(workerError || "Görsel hazırlama hatası.", "error");
-        setOcrLoading(false);
-        setOcrStatus('IDLE');
+        showToast("Görselde içerik bulunamadı.", "warning");
       }
-
-      worker.terminate();
-      URL.revokeObjectURL(workerUrl);
-      workerRef.current = null;
-    };
-
-    worker.postMessage({ file });
+    } catch (err: any) {
+      const errorMsg = err.message || "Analiz hatası.";
+      showToast(errorMsg, "error");
+    } finally {
+      setOcrLoading(false);
+      setOcrStatus('IDLE');
+    }
   };
 
   if (loadingSession) return (
